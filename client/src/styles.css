@@ -1,0 +1,720 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --bg: #14131f;
+  --surface: rgba(30, 28, 46, 0.72);
+  --surface-strong: rgba(30, 28, 46, 0.9);
+  --coral: #ff7a59;
+  --mint: #6bcfa6;
+  --text: #f5f3ef;
+  --text-dim: #b8b4c8;
+  --radius: 18px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  /* 모바일에서 실수로 스크롤/줌 되는 것을 방지 (카메라 드래그/핀치와 충돌 방지) */
+  overflow: hidden;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+input, textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.12s ease, opacity 0.12s ease, background 0.15s ease;
+}
+
+button:active {
+  transform: scale(0.94);
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+/* 데스크톱/터치 전용 요소 전환용 유틸리티 */
+.touch-only { display: none; }
+.desktop-only { display: block; }
+
+@media (pointer: coarse) {
+  .touch-only { display: block; }
+  .desktop-only { display: none; }
+}
+
+.app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.reconnect-banner {
+  position: absolute;
+  top: calc(16px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--coral);
+  color: #1a1a1a;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 8px 24px rgba(255, 122, 89, 0.35);
+  z-index: 30;
+}
+
+/* ===================== 시작 로고 스플래시 ===================== */
+.splash-screen {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #241f38 0%, #14131f 75%);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  perspective: 1000px;
+}
+
+.splash-ring {
+  position: absolute;
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 122, 89, 0.25);
+  animation: ringPulse 2s ease-out infinite;
+}
+
+@keyframes ringPulse {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+.splash-logo {
+  font-family: 'Poppins', sans-serif;
+  font-size: clamp(48px, 14vw, 78px);
+  margin: 0;
+  display: flex;
+  gap: 2px;
+  transform-style: preserve-3d;
+  animation: logoFloat 4.5s ease-in-out 1.3s infinite;
+  z-index: 1;
+}
+
+.splash-letter {
+  display: inline-block;
+  background: linear-gradient(90deg, var(--coral), var(--mint));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  opacity: 0;
+  transform-style: preserve-3d;
+  animation: letterIn 0.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes letterIn {
+  0% {
+    opacity: 0;
+    transform: rotateX(100deg) translateZ(-140px) translateY(24px);
+  }
+  55% {
+    opacity: 1;
+    transform: rotateX(-18deg) translateZ(16px) translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: rotateX(0deg) translateZ(0) translateY(0);
+  }
+}
+
+@keyframes logoFloat {
+  0%, 100% { transform: rotateY(-6deg); }
+  50% { transform: rotateY(6deg); }
+}
+
+.splash-tagline {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 6px 0 40px;
+  z-index: 1;
+}
+
+.splash-skip {
+  position: absolute;
+  bottom: calc(32px + var(--safe-bottom));
+  font-size: 12px;
+  color: var(--text-dim);
+  opacity: 0.6;
+  z-index: 1;
+}
+
+/* ===================== 로딩 화면 (서버 접속 등) ===================== */
+.loading-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(20, 19, 31, 0.85);
+  backdrop-filter: blur(6px);
+  z-index: 40;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: var(--coral);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-label {
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.connect-error {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--coral);
+}
+
+/* ===================== 아바타 커스터마이저 ===================== */
+.customizer-screen {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 50% 30%, #241f38 0%, #14131f 70%);
+  padding: calc(16px + var(--safe-top)) calc(16px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(16px + var(--safe-left));
+}
+
+.customizer-card,
+.avatar-creator-card {
+  width: 340px;
+  max-width: 100%;
+  background: var(--surface);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 32px 28px;
+  text-align: center;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+  position: relative;
+  overflow: hidden;
+}
+
+.customizer-card::before,
+.avatar-creator-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--coral), var(--mint));
+}
+
+.avatar-creator-card {
+  width: 420px;
+}
+
+.customizer-card h1,
+.avatar-creator-card h1 {
+  font-family: 'Poppins', sans-serif;
+  font-size: clamp(26px, 7vw, 32px);
+  margin: 0 0 4px;
+  background: linear-gradient(90deg, var(--coral), var(--mint));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.subtitle {
+  color: var(--text-dim);
+  font-size: 14px;
+  margin: 0 0 24px;
+}
+
+.avatar-preview-3d {
+  width: 100%;
+  height: 220px;
+  border-radius: 20px;
+  margin: 0 auto 20px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.avatar-preview-3d canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+.preset-emoji-large {
+  font-size: 40px;
+  line-height: 1;
+}
+
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.preset-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 8px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--preset-color) 18%, transparent);
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.preset-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--preset-color) 60%, transparent);
+}
+
+.preset-card.selected {
+  border-color: var(--preset-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--preset-color) 35%, transparent);
+}
+
+.preset-emoji {
+  font-size: 30px;
+  line-height: 1;
+}
+
+.preset-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.customizer-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.customizer-card input {
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.customizer-card input::placeholder { color: var(--text-dim); }
+
+.customizer-card button[type="submit"] {
+  padding: 14px;
+  border-radius: 999px;
+  border: none;
+  background: linear-gradient(90deg, var(--coral), #ff9d7a);
+  color: #1a1a1a;
+  font-weight: 700;
+  font-family: 'Poppins', sans-serif;
+  box-shadow: 0 10px 24px rgba(255, 122, 89, 0.3);
+}
+
+.customizer-card button[type="submit"]:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.google-btn-slot {
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 18px;
+  min-height: 44px;
+}
+
+.account-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(107, 207, 166, 0.12);
+  border: 1px solid rgba(107, 207, 166, 0.25);
+  border-radius: 12px;
+  padding: 8px 12px;
+  margin-bottom: 18px;
+  font-size: 12px;
+  color: var(--mint);
+  text-align: left;
+}
+
+.account-badge button {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  text-decoration: underline;
+  flex-shrink: 0;
+}
+
+.account-badge button:hover {
+  color: var(--coral);
+}
+
+.text-link {
+  display: block;
+  margin: 14px auto 0;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-decoration: underline;
+  padding: 6px;
+}
+
+/* ===================== 채팅 오버레이 ===================== */
+.chat-overlay {
+  position: absolute;
+  left: calc(16px + var(--safe-left));
+  bottom: calc(16px + var(--safe-bottom));
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.chat-overlay.closed {
+  display: none;
+}
+
+.chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.chat-title {
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'Poppins', sans-serif;
+  font-size: 13px;
+}
+
+.chat-online {
+  flex: 1;
+  text-align: right;
+}
+
+.chat-close-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: var(--text-dim);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.chat-close-btn:hover {
+  background: rgba(255, 122, 89, 0.25);
+  color: var(--coral);
+}
+
+.chat-messages {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  scroll-behavior: smooth;
+  touch-action: pan-y;
+}
+
+.chat-system {
+  align-self: center;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.chat-line {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 85%;
+}
+
+.chat-line.own {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-meta {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 11px;
+}
+
+.chat-name {
+  color: var(--mint);
+  font-weight: 600;
+}
+
+.chat-line.own .chat-name {
+  color: var(--coral);
+}
+
+.chat-time {
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+.chat-bubble {
+  background: rgba(255, 255, 255, 0.07);
+  padding: 6px 10px;
+  border-radius: 12px;
+  word-break: break-word;
+}
+
+.chat-line.own .chat-bubble {
+  background: linear-gradient(90deg, var(--coral), #ff9d7a);
+  color: #1a1a1a;
+}
+
+.emote-row {
+  display: flex;
+  gap: 6px;
+}
+
+.emote-row button {
+  background: rgba(255, 255, 255, 0.06);
+  border: none;
+  border-radius: 10px;
+  padding: 8px;
+  font-size: 18px;
+  flex: 1;
+}
+
+.emote-row button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 6px;
+}
+
+.chat-input-row input {
+  flex: 1;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.chat-input-row button {
+  background: var(--mint);
+  border: none;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-weight: 600;
+}
+
+.controls-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.admin-hint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--coral);
+  text-align: center;
+  font-weight: 600;
+}
+
+/* 채팅을 닫았을 때 다시 여는 버튼 (모바일에서 화면 확보용) */
+.chat-toggle-btn {
+  position: fixed;
+  right: calc(16px + var(--safe-right));
+  bottom: calc(16px + var(--safe-bottom));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, var(--coral), #ff9d7a);
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 24px rgba(255, 122, 89, 0.35);
+  z-index: 20;
+}
+
+/* ===================== 모바일/태블릿 이동 D패드 ===================== */
+.dpad {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .dpad {
+    display: grid;
+    grid-template-columns: 56px 56px 56px;
+    grid-template-rows: 56px 56px 56px;
+    grid-template-areas:
+      ".    up    ."
+      "left .     right"
+      ".    down  .";
+    gap: 6px;
+    position: fixed;
+    left: calc(16px + var(--safe-left));
+    bottom: calc(16px + var(--safe-bottom));
+    z-index: 20;
+    touch-action: none;
+  }
+}
+
+.dpad-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(30, 28, 46, 0.75);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.dpad-btn:active {
+  background: rgba(255, 122, 89, 0.4);
+  border-color: var(--coral);
+}
+
+/* 모바일 달리기/점프 버튼 */
+.action-buttons {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .action-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    position: fixed;
+    right: calc(16px + var(--safe-right));
+    bottom: calc(84px + var(--safe-bottom));
+    z-index: 20;
+  }
+}
+
+.action-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(30, 28, 46, 0.75);
+  backdrop-filter: blur(8px);
+  color: var(--text);
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.action-btn:active,
+.action-btn.active {
+  background: rgba(255, 122, 89, 0.4);
+  border-color: var(--coral);
+}
+
+/* 채팅 패널이 D패드/토글 버튼과 겹치지 않도록 터치 기기에서 위치 조정 */
+@media (pointer: coarse) {
+  .chat-overlay {
+    left: calc(16px + var(--safe-left));
+    right: calc(16px + var(--safe-right));
+    bottom: calc(96px + var(--safe-bottom));
+    width: auto;
+    max-width: none;
+  }
+
+  .chat-toggle-btn {
+    bottom: calc(16px + var(--safe-bottom));
+  }
+}
+
+/* 아주 좁은 화면(작은 폰) 보정 */
+@media (max-width: 380px) {
+  .customizer-card,
+  .avatar-creator-card {
+    padding: 24px 18px;
+  }
+
+  .chat-messages {
+    max-height: 120px;
+  }
+}
