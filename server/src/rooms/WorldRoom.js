@@ -2,7 +2,7 @@ import colyseus from "colyseus";
 const { Room } = colyseus;
 import jwt from "jsonwebtoken";
 import { WorldState, Player } from "../schema/State.js";
-import { getUserByGoogleId } from "../db.js";
+import { getUserByGoogleId, getRoomBySlug } from "../db.js";
 import { isAdminEmail } from "../admin.js";
 import { isBanned, banTarget } from "../bans.js";
 
@@ -29,6 +29,12 @@ function isValidAvatarPreset(v) {
   // 정확한 목록을 서버에도 복사해두는 대신 패턴만 검사해서, 클라이언트에 프리셋을 추가/변경해도
   // 서버 쪽을 매번 같이 고칠 필요가 없게 했습니다.
   return typeof v === "string" && /^[a-z0-9_-]{1,32}$/.test(v);
+}
+
+// server/src/manager.js에서 만드는 slug와 같은 형식(소문자/숫자/하이픈)만 mapId로 허용합니다.
+// "main"은 클라이언트에 내장된 메인 광장(plaza.glb)을 가리키는 예약어입니다.
+function isValidMapId(v) {
+  return typeof v === "string" && /^[a-z0-9-]{1,40}$/.test(v);
 }
 
 function escapeForBroadcast(v) {
@@ -66,8 +72,35 @@ function extractIp(request) {
 export class WorldRoom extends Room {
   maxClients = 30;
 
-  onCreate() {
+  // index.js에서 gameServer.define("world", WorldRoom).filterBy(["mapId"])로 등록해뒀기 때문에,
+  // mapId가 다른 joinOrCreate 요청은 서로 다른 WorldRoom 인스턴스로 분리됩니다
+  // (예: mapId "main"과 "room2"는 완전히 독립된 방 — 서로의 플레이어/채팅이 안 보임).
+  // onCreate가 Promise를 반환하면 colyseus 매치메이커가 완료를 기다려주므로,
+  // 여기서 DB를 조회해 커스텀 방의 glb 경로를 안전하게 state에 채워둘 수 있습니다.
+  async onCreate(options) {
     this.setState(new WorldState());
+
+    const requestedMapId = isValidMapId(options?.mapId) ? options.mapId : "main";
+    if (requestedMapId === "main") {
+      this.state.mapId = "main";
+    } else {
+      // 관리자가 /manager 에서 업로드해서 만든 커스텀 방인지 DB에서 확인합니다.
+      // (클라이언트가 존재하지 않는 mapId를 보내거나, 방이 삭제된 뒤에도 남아있던 링크로
+      //  들어오려는 경우엔 메인 광장으로 안전하게 되돌립니다.)
+      try {
+        const row = await getRoomBySlug(requestedMapId);
+        if (row) {
+          this.state.mapId = row.slug;
+          this.state.modelUrl = row.model_path;
+        } else {
+          this.state.mapId = "main";
+        }
+      } catch (err) {
+        console.error("커스텀 방 정보를 불러오지 못해 메인 광장으로 대체합니다:", err.message);
+        this.state.mapId = "main";
+      }
+    }
+
     // 강퇴/차단으로 나간 세션은 재접속 기회를 주지 않기 위한 표시
     this.forcedLeaveSessions = new Set();
     // 채팅 도배 방지용 최근 전송 시각 기록 — sessionId -> timestamp[].

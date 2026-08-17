@@ -407,6 +407,245 @@ input:focus-visible {
   padding: 6px;
 }
 
+/* ===================== 입장할 방 고르기 화면 ===================== */
+.room-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.room-select-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  text-align: left;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.room-select-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--mint);
+}
+
+.room-select-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.room-select-card.joining {
+  border-color: var(--coral);
+}
+
+.room-select-emoji {
+  font-size: 22px;
+}
+
+.room-select-name {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.room-select-cta {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* ===================== 게임 중 "다른 방으로 이동" 버튼/패널 ===================== */
+.room-switcher-btn {
+  position: fixed;
+  right: calc(16px + var(--safe-right));
+  top: calc(16px + var(--safe-top));
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(30, 28, 46, 0.75);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  z-index: 21;
+}
+
+.room-switcher-panel {
+  position: fixed;
+  right: calc(16px + var(--safe-right));
+  top: calc(68px + var(--safe-top));
+  width: 240px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  z-index: 21;
+}
+
+.room-switcher-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.room-switcher-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.room-switcher-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  text-align: left;
+}
+
+.room-switcher-item:hover:not(:disabled) {
+  border-color: var(--mint);
+}
+
+.room-switcher-item.current {
+  border-color: var(--coral);
+  background: rgba(255, 122, 89, 0.12);
+}
+
+.room-switcher-item:disabled {
+  cursor: default;
+}
+
+.room-switcher-current-badge {
+  font-size: 10px;
+  color: var(--coral);
+  font-weight: 700;
+}
+
+/* ===================== ⚙️ 그래픽 설정 버튼/패널 ===================== */
+.graphics-settings-btn {
+  position: fixed;
+  right: calc(68px + var(--safe-right));
+  top: calc(16px + var(--safe-top));
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(30, 28, 46, 0.75);
+  backdrop-filter: blur(8px);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  z-index: 21;
+}
+
+.graphics-settings-panel {
+  position: fixed;
+  right: calc(16px + var(--safe-right));
+  top: calc(68px + var(--safe-top));
+  width: 260px;
+  max-width: calc(100vw - 32px);
+  background: var(--surface-strong);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+  z-index: 22;
+}
+
+.graphics-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.graphics-toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.graphics-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.graphics-toggle-desc {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.graphics-switch {
+  flex-shrink: 0;
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.15);
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.graphics-switch.on {
+  background: var(--mint);
+}
+
+.graphics-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.graphics-switch.on .graphics-switch-knob {
+  transform: translateX(18px);
+}
+
+.graphics-settings-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.4;
+  margin: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 10px;
+}
+
 /* ===================== 채팅 오버레이 ===================== */
 .chat-overlay {
   position: absolute;

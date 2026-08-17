@@ -3,7 +3,8 @@ const TOKEN_KEY = "nexus_auth_token";
 // 클라이언트가 이미 알고 있는 WebSocket 주소(ws://...)에서 REST API 베이스(http://...)를 유도합니다.
 // 별도 env 변수를 추가하지 않아도 되도록 하기 위함입니다.
 const WS_URL = import.meta.env.VITE_SERVER_URL || "ws://localhost:2567";
-const API_BASE = WS_URL.replace(/^ws/, "http");
+// network/room.js와 roomsApi.js에서도 같은 REST API 베이스가 필요해서 내보냅니다.
+export const API_BASE = WS_URL.replace(/^ws/, "http");
 
 export function saveToken(token) {
   localStorage.setItem(TOKEN_KEY, token);

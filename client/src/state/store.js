@@ -5,9 +5,18 @@ export const usePlayersStore = create((set) => ({
   sessionId: null,
   players: {},
   chatMessages: [],
+  // 현재 입장해있는 방. "main"이면 클라이언트 내장 plaza.glb, 그 외엔 관리자가 업로드한 커스텀 방
+  // (modelUrl은 서버가 room.state로 내려주는 상대 경로, 예: "/uploads/models/room2-....glb")
+  mapId: "main",
+  modelUrl: "",
+  // 방 이동(switchRoom) 도중에는 잠깐 connected가 false가 되는데, 이때 "연결 끊김" 배너가
+  // 잘못 뜨지 않도록 App.jsx가 이 값을 함께 확인합니다.
+  switchingRoom: false,
 
   setConnected: (connected) => set({ connected }),
   setSessionId: (sessionId) => set({ sessionId }),
+  setMapInfo: (mapId, modelUrl) => set({ mapId, modelUrl: modelUrl || "" }),
+  setSwitchingRoom: (switchingRoom) => set({ switchingRoom }),
 
   upsertPlayer: (id, data) =>
     set((state) => ({

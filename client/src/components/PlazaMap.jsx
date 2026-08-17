@@ -50,6 +50,17 @@ function RealMap() {
   const { scene } = useGLTF(MAP_URL);
 
   useEffect(() => {
+    // GLTF로 만든 메시는 기본적으로 castShadow/receiveShadow가 꺼져 있어서, 켜주지 않으면
+    // 맵 전체가 조명의 그림자에 전혀 반응하지 않습니다(바닥에 그림자가 안 지고, 벽도 그림자를
+    // 못 받음). 씬을 순회하며 모든 메시에 켜줘서 방금 추가한 조명/그림자 품질 개선이 맵에도
+    // 그대로 적용되게 합니다.
+    scene.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+      }
+    });
+
     // 언마운트될 때(=임시 배경으로 전환될 때) 씬을 완전히 정리하고,
     // drei의 useGLTF 캐시도 함께 비웁니다. 캐시를 안 비우면 파일을 다시 넣었을 때도
     // 예전에 로드했던(이미 dispose된) 씬 객체를 그대로 재사용하려고 해서 잔상/에러가 납니다.

@@ -22,13 +22,14 @@ export default function Player({ data }) {
   const movingRef = useRef(false);
   const runningRef = useRef(false);
   const groundedRef = useRef(true);
+  const verticalVelocityRef = useRef(0); // 프레임 간 y 변화량으로 추정한 속도 — 상승/하강 포즈 구분용
 
   target.current.set(data.x, data.y || CAPSULE_TOTAL_HALF, data.z);
 
   // 서버 스냅샷 사이를 부드럽게 보간하고, kinematic 콜라이더 위치도 같이 갱신
   // (덕분에 로컬 플레이어가 다른 유저 몸을 실제로 뚫고 지나가지 못함)
   // y값도 함께 보간하기 때문에 다른 유저의 점프도 그대로 보임
-  useFrame(() => {
+  useFrame((_, delta) => {
     const rb = rigidBody.current;
     if (!rb) return;
 
@@ -41,6 +42,9 @@ export default function Player({ data }) {
     // 절대 y좌표(바닥이 항상 0이라는 가정) 대신 프레임간 y 변화량으로 판단하면
     // 지형 높이가 다른 실제 맵에서도 "공중에 떠있는지"를 올바르게 구분할 수 있습니다.
     groundedRef.current = Math.abs(currentPos.current.y - before.y) < VERTICAL_STILL_THRESHOLD;
+    // 실제 물리 속도는 알 수 없지만(원격 플레이어는 위치만 보간), y 변화량/delta로 대략적인
+    // 수직 속도를 추정해두면 PresetAvatarModel이 상승/하강 포즈를 구분하는 데 충분합니다.
+    if (delta > 0) verticalVelocityRef.current = (currentPos.current.y - before.y) / delta;
 
     rb.setNextKinematicTranslation(currentPos.current);
 
@@ -68,6 +72,8 @@ export default function Player({ data }) {
           movingRef={movingRef}
           runningRef={runningRef}
           groundedRef={groundedRef}
+          verticalVelocityRef={verticalVelocityRef}
+          emote={data.emote}
           offsetY={-CAPSULE_TOTAL_HALF}
         />
       </group>

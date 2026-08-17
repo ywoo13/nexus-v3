@@ -17,42 +17,54 @@ nexus/
 │       ├── index.js         # Server entry point (landing page + status API + auth/manager routers)
 │       ├── db.js            # Postgres connection pool + users/bans schema
 │       ├── auth.js          # Google login verification / session issue+restore / profile save routes
-│       ├── manager.js       # Admin dashboard router (page + registered users / ban list APIs)
+│       ├── manager.js       # Admin dashboard router (page + registered users / ban list / custom room APIs)
+│       ├── storage.js       # Saves/deletes uploaded room .glb files — Supabase Storage if configured, else local disk
 │       ├── basicAuth.js     # HTTP Basic Auth middleware protecting /manager and /monitor
 │       ├── admin.js         # Checks ADMIN_EMAILS whitelist for admin status
 │       ├── bans.js          # Ban list read/insert/delete — keyed by Google account ID or IP
 │       ├── rooms/
-│       │   └── WorldRoom.js # Room logic: join/leave/move/chat/emote, kick/ban commands
+│       │   └── WorldRoom.js # Room logic: join/leave/move/chat/emote, kick/ban commands, mapId/custom-room resolution
 │       └── schema/
-│           └── State.js     # Synced state schema (Player, WorldState)
+│           └── State.js     # Synced state schema (Player, WorldState incl. mapId/modelUrl)
+│   └── uploads/models/       # .glb files uploaded from /manager, local-disk fallback only (git-ignored, created at boot when used)
 │
 ├── client/              # React + Three.js client
     └── src/
-        ├── App.jsx                  # Screen flow (auth → customizer ↔ world)
-        ├── scenes/World.jsx         # 3D canvas, lighting, ground
+        ├── App.jsx                  # Screen flow (auth → avatar → room select → world)
+        ├── scenes/World.jsx         # 3D canvas, lighting, ground, picks PlazaMap vs CustomRoomMap by mapId
         ├── components/
         │   ├── SplashScreen.jsx     # Logo screen shown briefly on launch
         │   ├── AuthScreen.jsx       # Google login / guest entry screen
         │   ├── LoadingScreen.jsx    # Loading overlay (server connect, etc.)
+        │   ├── RoomSelectScreen.jsx # Pre-join: pick Main Plaza or a custom room before connecting
+        │   ├── RoomSwitcher.jsx     # In-world 🌐 button/panel to move to another room mid-session
+        │   ├── GraphicsSettings.jsx # In-world ⚙️ button/panel to toggle high-quality FX / film grain shader
+        │   ├── FilmGrain.jsx        # React wrapper for the custom effects/filmGrainEffect.js shader
         │   ├── TouchDPad.jsx        # Mobile/tablet movement D-pad
         │   ├── TouchActionButtons.jsx # Mobile run/jump buttons
         │   ├── CameraRig.jsx        # Camera that follows the local player (wraps OrbitControls)
         │   ├── AvatarCustomizer.jsx # Pre-join: avatar preset gallery → nickname entry
-        │   ├── PresetAvatarModel.jsx # Self-hosted preset avatar gallery (no external API) + walk/idle animation
+        │   ├── PresetAvatarModel.jsx # Self-hosted preset avatar gallery (no external API) + walk/run/jump/emote animation
         │   ├── PlazaMap.jsx         # Real GLTF map loader (falls back to PlazaBackdrop/PlazaProps automatically)
+        │   ├── CustomRoomMap.jsx    # GLTF loader for admin-uploaded custom rooms (falls back to a plain floor)
         │   ├── PlazaProps.jsx       # Fountain/benches/boundary walls (with physics colliders, part of the fallback)
         │   ├── PlazaBackdrop.jsx    # Fallback backdrop: buildings/lamps/trees/floor pattern (no collision, fallback only)
         │   ├── Player.jsx           # Renders other players (interpolation + kinematic collider)
         │   ├── LocalPlayerController.jsx # Local character movement (keyboard/touch shared) + physics
         │   └── ChatBox.jsx          # Chat + emote UI (collapsible on mobile)
+        ├── effects/
+        │   └── filmGrainEffect.js   # Custom GLSL postprocessing shader (film grain + chromatic aberration)
         ├── input/
         │   └── movementInput.js     # Movement input shared by keyboard (WASD) and the touch D-pad
         ├── auth/
         │   ├── googleAuth.js         # Loads/renders the Google sign-in button (Google Identity Services)
-        │   └── session.js            # App token storage (localStorage) + login/session-restore/profile-save API calls
-        ├── network/room.js          # Colyseus client connection/messaging, auto-reconnect
+        │   └── session.js            # App token storage (localStorage) + login/session-restore/profile-save API calls + API_BASE
+        ├── network/
+        │   ├── room.js               # Colyseus client connection/messaging, auto-reconnect, switchRoom()
+        │   └── roomsApi.js           # Shared "fetch available rooms" helper used by RoomSelectScreen + RoomSwitcher
         └── state/
-            ├── store.js                 # zustand global state (player list, etc.)
+            ├── store.js                 # zustand global state (player list, current mapId/modelUrl, etc.)
+            ├── graphicsSettings.js      # zustand + localStorage: high-quality FX / film-grain shader toggle
             └── localPlayerPosition.js   # Local player's latest position, read by the camera
 └── render.yaml          # Render deployment blueprint (server Web Service + client Static Site)
 ```
@@ -120,6 +132,7 @@ If `DATABASE_URL` is left empty, the server still starts (so you can develop/tes
 - Global chat — broadcast to everyone in the room, auto-scroll, your messages vs. others' visually distinguished, join/leave system messages, online count.
 - Simple emotes (an emoji appears above the character's head for 2 seconds).
 - **Kick/Ban** — admins can moderate other players via chat slash commands (see [Manager & In-Game Admin](#developer-only-admin-page-manager--in-game-admin) below).
+- **Multi-room / custom rooms** — an admin can upload a `.glb` from `/manager` to spin up an additional room (e.g. "room2"); players choose Main Plaza or a custom room on entry, and can move between rooms mid-session via an in-world panel (see [Multi-Room / Custom Rooms](#multi-room--custom-rooms) below).
 
 ### Physics (collision) notes
 
@@ -132,6 +145,7 @@ If `DATABASE_URL` is left empty, the server still starts (so you can develop/tes
 
 - No setup required — `PresetAvatarModel.jsx` exports `AVATAR_PRESETS`, an array of ~6 simple characters (color scheme, head shape, accessories) built entirely from Three.js primitives (boxes/spheres/cones/capsules). Add more by appending to that array; no assets to source or license.
 - **Walk/idle motion is implemented as procedural animation that directly manipulates joint-group rotations, with no external animation files.** The rig (hips → spine → arms/legs, each a `<group>` with a `useRef`) is deliberately shaped like a Mixamo skeleton, and reuses the exact same walk-cycle math that both previous GLB-avatar integrations (Ready Player Me, then MetaPerson) used: legs/arms swing in opposite phase while moving, knees bend, and everything eases back to rest pose when idle.
+- **v3 animation pass:** arms got an elbow joint (`leftForearm`/`rightForearm` refs) so they bend during walk/run instead of staying ramrod-straight; landing now has a brief squash-and-stretch instead of snapping straight to idle; mid-air poses are split into "rising" vs "falling" using a `verticalVelocityRef` passed down from `LocalPlayerController.jsx` (real physics velocity) or `Player.jsx` (a `Δy/Δt` estimate for remote players, since only position is networked); and clicking an emote (`👋😂❤️🎉😢` in `ChatBox.jsx`) now plays a matching full-body pose (`playEmote()` in `PresetAvatarModel.jsx`) driven by the same `player.emote` state field that already showed the floating emoji, instead of only showing the emoji. All transitions use `THREE.MathUtils.damp` (frame-rate-independent easing, same primitive `LocalPlayerController.jsx` already used for movement) so switching between idle/walk/run/jump/emote never pops.
 - Selecting a preset just sets a short string ID (`avatarPreset`, e.g. `"coral"`) that's synced through Colyseus state and validated server-side against a simple `/^[a-z0-9_-]{1,32}$/` pattern (`WorldRoom.js`) — there's no URL, file, or iframe in the data path at all.
 - Because there's nothing to load, there's no `Suspense`/loading state for avatars anymore — `PresetAvatarModel` renders synchronously.
 - Previously this project used Ready Player Me, then MetaPerson — see the avatar system history note near the top of this README for why both were dropped in favor of this approach.
@@ -202,8 +216,35 @@ Visiting `http://localhost:2567/manager` triggers your browser's built-in login 
 - Active room count / online players (refreshes every 5s)
 - List of registered Google accounts (nickname, email, avatar preset, signup date, last login)
 - **Ban list** — accounts/IPs banned in-game via `/ban`, with an "Unban" button
+- **Room management** — upload a `.glb` to create a new room (e.g. "room2"), see all custom rooms, delete them (see [Multi-Room / Custom Rooms](#multi-room--custom-rooms) below)
 - If `MANAGER_PASSWORD` isn't set, the page refuses to load at all (prevents accidentally leaving it open)
 - `/monitor` (the built-in Colyseus room monitor), which used to be open with no auth at all, is now protected by the same password
+
+### Multi-Room / Custom Rooms
+
+Beyond the built-in Main Plaza (`client/public/models/plaza.glb`, bundled with the client), an admin logged into `/manager` can add extra rooms on the fly:
+
+1. On `/manager`, click **"+ 방 추가" ("+ Add room")** under **방 관리 ("Room management")**.
+2. Enter a room name and pick a **self-contained `.glb` file** (multi-file `.gltf` isn't supported — the whole scene, including textures, has to be baked into one binary file). Max size 150MB.
+3. On upload, the server slugifies the name into a URL-safe `mapId` (e.g. "회의실" → `room2` if that slug's taken, or a name-derived slug), stores the file under `server/uploads/models/`, and adds a row to the `rooms` table.
+4. That room immediately shows up for players — no restart needed.
+
+**How players use it:**
+- After picking a nickname/avatar, players see a **room-select screen** listing Main Plaza plus every custom room, and pick one to join.
+- While in-world, the **🌐 button** (top-right) opens a panel to move to a different room without disconnecting — the client leaves the current Colyseus room (consented, so no ghost/reconnect logic kicks in) and rejoins a different one with the same nickname/avatar, and the local player is re-spawned at the new room's server-assigned position.
+
+**How it's wired up (server):**
+- `gameServer.define("world", WorldRoom).filterBy(["mapId"])` — Colyseus treats each distinct `mapId` as a separate pool of room instances, so Main Plaza and every custom room are fully isolated (separate player lists, separate chat).
+- `WorldRoom#onCreate` looks up the requested `mapId` in the `rooms` table and puts the resolved `mapId`/`modelUrl` into synced state; an unknown or deleted `mapId` safely falls back to Main Plaza instead of erroring.
+- `GET /api/rooms` (public, no auth) lists custom rooms for the client's room-select/room-switch UI. `GET/POST/DELETE /manager/api/rooms` (Basic Auth-protected) manage them.
+
+**Where uploaded `.glb` files are stored:**
+- If `SUPABASE_SERVICE_ROLE_KEY` is set in `server/.env`, files go to a **Supabase Storage** bucket (public bucket, default name `room-models`) and stay there permanently. The project URL is auto-detected from `DATABASE_URL` when it's a Supabase Postgres connection string — set `SUPABASE_URL` explicitly only if your DB is hosted elsewhere (e.g. Neon) but you still want Supabase Storage. See the setup steps in `server/.env.example`.
+- Otherwise, files fall back to local disk at `server/uploads/models/`, served by the server itself.
+
+**Limitations to know about:**
+- ⚠️ On hosts with an ephemeral filesystem (e.g. Render's free tier, which wipes disk on every redeploy/restart), local-disk uploads are lost along with everything else that isn't in Postgres. **Set up Supabase Storage (or another external store) before deploying anywhere with an ephemeral filesystem** — local disk is fine for local development only.
+- The Main Plaza's model stays a client-bundled asset (not swappable from `/manager`) — only additional rooms go through the upload flow.
 
 ### In-game admin (Google email whitelist)
 
@@ -349,13 +390,16 @@ The following were reviewed and fixed after receiving a prioritized bug list:
 - **Fixed input loss on failed connection** — a failed server connection used to remount the entire avatar screen, wiping out the avatar/nickname the player had just picked. The loading screen is now a pure overlay, and the avatar screen stays mounted throughout.
 - **Lighting/color improvements** — switched the `Environment` preset to `sunset` and added fog for depth. Nametags got a white outline for readability against any background, and plaza props (fountain/benches/boundary walls) were retinted to match the coral/mint brand palette.
 - Added hover interactions on preset cards/buttons/links and a gradient accent line at the top of cards for overall visual polish.
+- **Lighting/postprocessing pass (v3):** switched to a proper 3-point rig (sun key light + sky/ground `hemisphereLight` fill + a cool rim light on the far side, so characters don't get lost against the backdrop), added `SoftShadows` (drei's PCSS approximation) for softer shadow edges, tuned `shadow-bias`/`shadow-normalBias` on the key light to reduce shadow acne, and switched the renderer to ACES filmic tone mapping for a less "flat" look. Added a light `@react-three/postprocessing` stack (mipmap `Bloom`, `Vignette`, a small `HueSaturation` boost) to both `World.jsx` and `AvatarPreviewCanvas.jsx` so the character-creation screen matches in-game color grading. Also fixed a real bug along the way: GLTF maps (`PlazaMap.jsx`'s real map, `CustomRoomMap.jsx`) never had `castShadow`/`receiveShadow` enabled on their meshes, so uploaded/imported maps were completely unlit by shadows — fixed by traversing the loaded scene once and turning both on.
+- **Graphics settings toggle + a hand-written shader (v3.1):** added a ⚙️ button (`GraphicsSettings.jsx`, `state/graphicsSettings.js`) so people on older/weaker devices can turn off the heavier effects — "고품질 그래픽" drops `SoftShadows`, `Bloom`/`Vignette`/`HueSaturation`, halves shadow-map resolution, and caps `dpr` to 1x. The preference is saved to `localStorage` and persists across sessions. Also added a genuinely custom effect (not one of the library's built-ins): `effects/filmGrainEffect.js` is a GLSL fragment shader — written against `postprocessing`'s `Effect` base class the same way its own built-in `ChromaticAberration` effect is — that layers a subtle animated film-grain noise with a small radial chromatic aberration (samples `inputBuffer` at UV-offset R/B channels near the screen edges). It's wired up as its own independent toggle ("필름 그레인") separate from the high-quality switch, via `FilmGrain.jsx` (the standard `useMemo` + `<primitive>` wrapper pattern for custom `@react-three/postprocessing` effects).
 
 ## Ideas for What's Next
 
-1. **More avatar presets / better animation** — `AVATAR_PRESETS` in `PresetAvatarModel.jsx` is easy to extend with new characters; the walk cycle could also be made more expressive (run, jump, sit poses) without needing any external animation files, since it's all procedural.
+1. **More avatar presets** — `AVATAR_PRESETS` in `PresetAvatarModel.jsx` is easy to extend with new characters; the animation rig (elbow/knee joints, landing squash, rise/fall jump poses, emote poses) is shared automatically by any new preset, since it's all procedural.
 2. ~~Real map import~~ — done in v2 (see above). Proximity chat was tried and reverted back to global chat.
 3. **Interactive objects** — a couple of clickable objects like a bench you can sit on or a photo-booth spot.
 4. **Inventory / friends list** — broader social features.
 5. **Voice chat** — extend beyond text chat via WebRTC.
+6. ~~Low-end device graphics toggle~~ — done in v3.1 (see above): the ⚙️ button lets people drop `SoftShadows`/`Bloom`/`Vignette` and shadow resolution independently of the film-grain shader.
 
 Working through this list one item at a time is a good way to keep raising the bar on this as a portfolio piece.

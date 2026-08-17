@@ -50,7 +50,20 @@ export async function initDb() {
       UNIQUE (target_type, target_value)
     );
   `);
-  console.log("데이터베이스 스키마 확인/생성 완료 (users, bans)");
+  // 관리자가 /manager 에서 .glb를 업로드해서 만든 추가 방(맵) 목록.
+  // "main"(메인 광장)은 클라이언트에 내장된 plaza.glb를 쓰므로 이 테이블에 들어가지 않고,
+  // 여기엔 admin이 업로드한 room2, room3... 같은 커스텀 방만 저장됩니다.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS rooms (
+      id SERIAL PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,     -- 매치메이킹에 쓰이는 mapId (예: "room2") — URL-safe
+      name TEXT NOT NULL,            -- 화면에 보여줄 방 이름 (예: "회의실")
+      model_path TEXT NOT NULL,      -- 정적 서빙 경로 (예: "/uploads/models/room2-171....glb")
+      created_by TEXT,               -- 참고용 (누가 올렸는지) — 현재는 매니저 유저명 정도만 기록
+      created_at BIGINT
+    );
+  `);
+  console.log("데이터베이스 스키마 확인/생성 완료 (users, bans, rooms)");
 }
 
 // ── users 테이블 ──────────────────────────────────────────────
@@ -84,6 +97,32 @@ export async function listUsers() {
      FROM users ORDER BY last_login_at DESC`
   );
   return rows;
+}
+
+// ── rooms 테이블 (관리자가 업로드한 커스텀 방) ──────────────────
+export async function listRooms() {
+  const { rows } = await pool.query(`SELECT * FROM rooms ORDER BY created_at ASC`);
+  return rows;
+}
+
+export async function getRoomBySlug(slug) {
+  const { rows } = await pool.query(`SELECT * FROM rooms WHERE slug = $1`, [slug]);
+  return rows[0] || null;
+}
+
+export async function createRoom({ slug, name, modelPath, createdBy, now }) {
+  const { rows } = await pool.query(
+    `INSERT INTO rooms (slug, name, model_path, created_by, created_at)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [slug, name, modelPath, createdBy || "", now]
+  );
+  return rows[0];
+}
+
+export async function deleteRoomBySlug(slug) {
+  const { rows } = await pool.query(`DELETE FROM rooms WHERE slug = $1 RETURNING *`, [slug]);
+  return rows[0] || null;
 }
 
 export default pool;

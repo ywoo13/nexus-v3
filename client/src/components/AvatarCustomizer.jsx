@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { AVATAR_PRESETS } from "./PresetAvatarModel.jsx";
 import AvatarPreviewCanvas from "./AvatarPreviewCanvas.jsx";
 
-export default function AvatarCustomizer({ onJoin, errorMessage, loading, initialData, googleUser, onLogout }) {
+export default function AvatarCustomizer({ onNext, initialData, googleUser, onLogout }) {
   const [step, setStep] = useState(initialData?.avatarPreset ? "name" : "avatar");
   const [avatarPreset, setAvatarPreset] = useState(initialData?.avatarPreset || AVATAR_PRESETS[0].id);
   const [name, setName] = useState(initialData?.name || "");
@@ -14,12 +14,7 @@ export default function AvatarCustomizer({ onJoin, errorMessage, loading, initia
 
   function handleSubmit(e) {
     e.preventDefault();
-    // 접속 시도 중(loading)에는 무시합니다. 제출 버튼은 disabled 처리되어 있지만,
-    // 텍스트 입력창에 포커스가 있는 상태에서 Enter 키를 누르면 브라우저에 따라
-    // disabled된 제출 버튼과 무관하게 폼 submit이 다시 발생할 수 있어, 접속 요청이
-    // 중복으로 나가는 것을 여기서도 한 번 더 막습니다.
-    if (loading) return;
-    onJoin({ name: name.trim() || "Guest", avatarPreset });
+    onNext({ name: name.trim() || "Guest", avatarPreset });
   }
 
   const selected = AVATAR_PRESETS.find((p) => p.id === avatarPreset) || AVATAR_PRESETS[0];
@@ -53,7 +48,7 @@ export default function AvatarCustomizer({ onJoin, errorMessage, loading, initia
     <div className="customizer-screen">
       <div className="customizer-card">
         <h1>Nexus</h1>
-        <p className="subtitle">닉네임을 정하고 광장에 입장하세요</p>
+        <p className="subtitle">닉네임을 정하고 다음 단계로 넘어가세요</p>
 
         {googleUser && (
           <div className="account-badge">
@@ -76,16 +71,12 @@ export default function AvatarCustomizer({ onJoin, errorMessage, loading, initia
             maxLength={16}
             autoFocus
           />
-          <button type="submit" disabled={loading}>
-            {loading ? "입장 중…" : "입장하기"}
-          </button>
+          <button type="submit">다음: 방 고르기 →</button>
         </form>
 
         <button type="button" className="text-link" onClick={() => setStep("avatar")}>
           아바타 다시 고르기
         </button>
-
-        {errorMessage && <p className="connect-error">{errorMessage}</p>}
       </div>
     </div>
   );

@@ -101,6 +101,76 @@
       }
       .unban-btn:hover { background: rgba(107, 207, 166, 0.3); }
       .unban-btn:disabled { opacity: 0.5; cursor: default; }
+
+      .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 40px 0 4px;
+      }
+      .section-header h2 { margin: 0; }
+      .add-room-btn {
+        background: linear-gradient(90deg, var(--coral), #ff9d7a);
+        color: #1a1a1a;
+        border: none;
+        border-radius: 10px;
+        padding: 8px 16px;
+        font-weight: 600;
+        font-size: 13px;
+        font-family: inherit;
+        cursor: pointer;
+      }
+      .add-room-btn:hover { filter: brightness(1.05); }
+
+      .room-form {
+        background: var(--surface);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        padding: 18px;
+        margin: 14px 0 20px;
+        display: none;
+      }
+      .room-form.open { display: block; }
+      .room-form label {
+        display: block;
+        font-size: 12px;
+        color: var(--text-dim);
+        margin-bottom: 6px;
+      }
+      .room-form input[type="text"] {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--text);
+        font-size: 14px;
+        margin-bottom: 14px;
+        font-family: inherit;
+      }
+      .room-form input[type="file"] {
+        width: 100%;
+        color: var(--text-dim);
+        font-size: 13px;
+        margin-bottom: 6px;
+      }
+      .room-form-hint { font-size: 11px; color: var(--text-dim); margin: 0 0 14px; }
+      .room-form-actions { display: flex; gap: 10px; align-items: center; }
+      .room-form-error { font-size: 12px; color: var(--coral); margin: 0; }
+      .delete-room-btn {
+        background: rgba(255, 122, 89, 0.15);
+        color: var(--coral);
+        border: 1px solid rgba(255, 122, 89, 0.3);
+        border-radius: 8px;
+        padding: 5px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .delete-room-btn:hover { background: rgba(255, 122, 89, 0.3); }
+      .delete-room-btn:disabled { opacity: 0.5; cursor: default; }
+      .model-link { color: var(--mint); font-size: 12px; text-decoration: none; }
+      .model-link:hover { text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -126,6 +196,49 @@
           <div class="stat-label">차단된 계정/IP</div>
         </div>
       </div>
+
+      <div class="section-header">
+        <h2 style="margin: 0;">방 관리</h2>
+        <button type="button" class="add-room-btn" id="toggleRoomFormBtn">+ 방 추가</button>
+      </div>
+      <p class="subtitle" style="margin: 0 0 4px;">
+        메인 광장(Main Plaza)은 클라이언트에 내장된 <code>plaza.glb</code>를 그대로 쓰기 때문에 여기 목록에는
+        나오지 않습니다. 아래에서 새 <code>.glb</code>를 올리면 room2, room3 같은 별도 방이 만들어지고,
+        플레이어들이 입장 화면 또는 게임 안 이동 메뉴에서 골라 들어갈 수 있어요.
+      </p>
+
+      <form class="room-form" id="roomForm">
+        <label for="roomNameInput">방 이름</label>
+        <input type="text" id="roomNameInput" name="name" placeholder="예: 회의실" maxlength="40" required />
+
+        <label for="roomFileInput">.glb 파일</label>
+        <input type="file" id="roomFileInput" name="model" accept=".glb" required />
+        <p class="room-form-hint">
+          텍스처/애니메이션이 전부 하나로 묶인 자체 포함형(self-contained) .glb만 지원합니다
+          (여러 파일로 나뉜 .gltf는 불가). 최대 150MB.
+        </p>
+
+        <div class="room-form-actions">
+          <button type="submit" class="add-room-btn" id="roomSubmitBtn">업로드</button>
+          <span id="roomFormStatus" style="font-size: 12px; color: var(--text-dim);"></span>
+        </div>
+        <p class="room-form-error" id="roomFormError"></p>
+      </form>
+
+      <table>
+        <thead>
+          <tr>
+            <th>방 이름</th>
+            <th>mapId</th>
+            <th>모델 파일</th>
+            <th>생성일</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="roomsBody">
+          <tr><td colspan="5" class="empty">불러오는 중…</td></tr>
+        </tbody>
+      </table>
 
       <h2>가입 계정 (구글 로그인)</h2>
       <table>
@@ -268,9 +381,101 @@
         }
       }
 
+      async function loadRooms() {
+        const tbody = document.getElementById("roomsBody");
+        try {
+          const res = await fetch("/manager/api/rooms");
+          if (!res.ok) throw new Error("요청 실패");
+          const data = await res.json();
+
+          if (data.rooms.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty">아직 업로드한 방이 없습니다. 위 "+ 방 추가" 버튼으로 만들어보세요.</td></tr>';
+            return;
+          }
+
+          tbody.innerHTML = data.rooms
+            .map((r) => {
+              const created = r.created_at ? new Date(r.created_at).toLocaleString("ko-KR") : "-";
+              return `<tr>
+                <td>${escapeHtml(r.name)}</td>
+                <td><span class="badge">${escapeHtml(r.slug)}</span></td>
+                <td><a class="model-link" href="${escapeHtml(r.model_path)}" target="_blank" rel="noopener">파일 열기</a></td>
+                <td>${created}</td>
+                <td><button class="delete-room-btn" data-slug="${escapeHtml(r.slug)}">삭제</button></td>
+              </tr>`;
+            })
+            .join("");
+
+          tbody.querySelectorAll(".delete-room-btn").forEach((btn) => {
+            btn.addEventListener("click", () => handleDeleteRoom(btn));
+          });
+        } catch (err) {
+          tbody.innerHTML = '<tr><td colspan="5" class="empty">불러오지 못했습니다.</td></tr>';
+        }
+      }
+
+      async function handleDeleteRoom(btn) {
+        const slug = btn.dataset.slug;
+        if (!confirm(`"${slug}" 방을 삭제할까요? 지금 그 방에 접속해있는 플레이어에게는 영향이 없지만, 새로 입장하는 사람은 더 이상 고를 수 없게 됩니다.`)) {
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = "삭제 중…";
+        try {
+          const res = await fetch(`/manager/api/rooms/${encodeURIComponent(slug)}`, { method: "DELETE" });
+          if (!res.ok) throw new Error("요청 실패");
+          loadRooms();
+        } catch (err) {
+          btn.disabled = false;
+          btn.textContent = "삭제";
+          alert("삭제에 실패했습니다.");
+        }
+      }
+
+      const roomForm = document.getElementById("roomForm");
+      const toggleRoomFormBtn = document.getElementById("toggleRoomFormBtn");
+      toggleRoomFormBtn.addEventListener("click", () => {
+        roomForm.classList.toggle("open");
+      });
+
+      roomForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const submitBtn = document.getElementById("roomSubmitBtn");
+        const statusEl = document.getElementById("roomFormStatus");
+        const errorEl = document.getElementById("roomFormError");
+        errorEl.textContent = "";
+
+        const fileInput = document.getElementById("roomFileInput");
+        if (!fileInput.files[0]) {
+          errorEl.textContent = ".glb 파일을 선택해주세요.";
+          return;
+        }
+
+        const formData = new FormData(roomForm);
+        submitBtn.disabled = true;
+        statusEl.textContent = "업로드 중… (파일 크기에 따라 시간이 걸릴 수 있어요)";
+
+        try {
+          const res = await fetch("/manager/api/rooms", { method: "POST", body: formData });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "업로드 실패");
+
+          statusEl.textContent = "";
+          roomForm.reset();
+          roomForm.classList.remove("open");
+          loadRooms();
+        } catch (err) {
+          statusEl.textContent = "";
+          errorEl.textContent = err.message || "업로드에 실패했습니다.";
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+
       loadStatus();
       loadUsers();
       loadBans();
+      loadRooms();
       setInterval(loadStatus, 5000);
     </script>
   </body>

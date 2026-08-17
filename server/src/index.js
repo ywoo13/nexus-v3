@@ -13,7 +13,7 @@ import { WorldRoom } from "./rooms/WorldRoom.js";
 import authRouter from "./auth.js";
 import managerRouter from "./manager.js";
 import { requireBasicAuth } from "./basicAuth.js";
-import { initDb } from "./db.js";
+import { initDb, listRooms } from "./db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 2567);
@@ -61,10 +61,36 @@ app.use(express.json());
 // 서버 접속 시 보이는 시작 페이지 (public/index.html)
 app.use(express.static(path.join(__dirname, "../public")));
 
+// 로컬 디스크 모드로 저장된 .glb 파일들 — 3D 에셋이라 클라이언트(다른 도메인)가 fetch/three.js로
+// 직접 읽어와야 하므로 이 경로에는 CORS를 열어둡니다 (개인정보가 없는 정적 파일이라 안전합니다).
+// Supabase Storage 모드(SUPABASE_URL 설정됨)에서는 파일이 여기가 아니라 Supabase의 공개 URL로
+// 직접 서빙되므로 이 라우트는 그냥 안 쓰입니다 — 남겨둬도 무해합니다.
+app.use("/uploads", cors({ origin: true }), express.static(path.join(__dirname, "../uploads")));
+
 const httpServer = createServer(app);
 const gameServer = new Server({ server: httpServer });
 
-gameServer.define("world", WorldRoom);
+// mapId가 다른 join 요청은 서로 다른 방 인스턴스로 분리합니다 (메인 광장 vs room2 vs room3...).
+// server/src/rooms/WorldRoom.js의 onCreate가 mapId를 검증하고 DB에서 모델 경로를 채워넣습니다.
+gameServer.define("world", WorldRoom).filterBy(["mapId"]);
+
+// 입장 화면에서 "메인 광장 / room2 / ..." 중 고를 수 있도록 보여주는 공개 목록 API.
+// 관리자 전용 정보(누가 올렸는지 등)는 빼고 화면에 필요한 것만 내려줍니다.
+app.get("/api/rooms", cors({ origin: true }), async (_req, res) => {
+  try {
+    const rooms = await listRooms();
+    res.json({
+      rooms: rooms.map((r) => ({
+        slug: r.slug,
+        name: r.name,
+        modelUrl: r.model_path,
+      })),
+    });
+  } catch (err) {
+    // rooms 테이블 조회 실패(DB 미설정 등)해도 메인 광장은 항상 입장 가능해야 하므로 빈 목록으로 응답
+    res.json({ rooms: [] });
+  }
+});
 
 // 구글 로그인 / 세션 복원 / 프로필 저장 — 짧은 시간에 너무 잦은 요청은 차단 (무차별 대입/남용 방지)
 const authRateLimiter = rateLimit({

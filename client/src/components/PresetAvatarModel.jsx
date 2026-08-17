@@ -21,6 +21,10 @@ import * as THREE from "three";
 //  - 손/발을 별도 메쉬로 마감해 팔다리가 잘린 것처럼 보이지 않게 함
 //  - 씬에 이미 있는 <Environment>가 자동으로 반사/하이라이트를 얹어주므로
 //    meshStandardMaterial의 roughness/metalness만 프리셋별로 신경 씀
+//
+// v3: 애니메이션을 한 단계 더 다듬었습니다 — 팔에 팔꿈치 관절을 추가하고, 착지 스쿼시(눌림)와
+// 점프의 상승/하강 포즈를 구분했으며, 이모트(👋😂❤️🎉😢)를 눈 위 이모지 표시에서 그치지 않고
+// 실제 몸 동작으로 재생하도록 했습니다. 상세 내용은 아래 useFrame과 playEmote()의 주석 참고.
 export const AVATAR_PRESETS = [
   { id: "classic", label: "클래식", emoji: "🙂", body: "#4f9dff", accent: "#274a78", skin: "#ffd9b3", head: "round", hair: "cap" },
   { id: "coral", label: "폭시", emoji: "🦊", body: "#ff6b6b", accent: "#8a2e2e", skin: "#ff6b6b", head: "round", ears: true, snout: true },
@@ -35,7 +39,6 @@ export function getAvatarPreset(id) {
 }
 
 const WALK_SPEED = 8;
-const RETURN_LERP = 0.12;
 
 // 공통 머티리얼 프리셋 — 매번 roughness/metalness를 반복해서 적지 않도록.
 function Mat({ color, glow, translucent, metal, ...rest }) {
@@ -219,22 +222,129 @@ function Limb({ jointRef, length, radius, color, translucent, children }) {
 }
 
 /**
+ * 이모트(👋😂❤️🎉😢) 재생 중일 때의 몸 포즈를 계산해서 적용합니다. 걷기 애니메이션과 마찬가지로
+ * "지금 몇 초째 재생 중인지"(phase)를 받아 사인파 기반으로 자연스럽게 반복/변화하는 동작을 만들고,
+ * refs.lerpX/Y/Z(damp 기반 보간)로 적용하기 때문에 이모트가 시작되거나 끝나는 순간에도 관절이
+ * 툭 튀지 않고 부드럽게 이어집니다. 목록에 없는 이모지가 들어와도(향후 이모트 추가 등) 기본 포즈로
+ * 대응하도록 default 케이스를 둡니다.
+ */
+function playEmote(emote, phase, refs) {
+  const { spine, headRef, leftArm, rightArm, leftForearm, rightForearm, leftUpLeg, rightUpLeg, leftLeg, rightLeg, tailRef, group, lerpX, lerpY, lerpZ } = refs;
+
+  // 대부분의 이모트는 서 있는 자세가 기본이라, 다리는 공통으로 rest pose로 되돌려둡니다.
+  lerpX(leftUpLeg, 0, 10);
+  lerpX(rightUpLeg, 0, 10);
+  lerpX(leftLeg, 0, 10);
+  lerpX(rightLeg, 0, 10);
+
+  switch (emote) {
+    case "👋": {
+      // 오른팔을 옆으로 들어 올리고, 팔꿈치 아래(손)를 좌우로 흔들어 손 인사를 표현
+      lerpZ(rightArm, -2.3, 12);
+      lerpX(rightArm, -0.2, 12);
+      lerpX(rightForearm, Math.sin(phase * 9) * 0.5 - 0.2, 20);
+      lerpX(leftArm, 0, 10);
+      lerpX(leftForearm, 0.12, 10);
+      lerpZ(headRef, Math.sin(phase * 9) * 0.05, 10);
+      lerpY(spine, Math.sin(phase * 9) * 0.04, 10);
+      break;
+    }
+    case "😂": {
+      // 배꼽 잡고 웃는 느낌: 상체를 앞뒤로 크게 들썩이고, 양팔은 살짝 벌려 배 쪽으로
+      const shake = Math.sin(phase * 7);
+      lerpX(spine, 0.18 + shake * 0.16, 16);
+      lerpZ(leftArm, 0.9, 12);
+      lerpZ(rightArm, -0.9, 12);
+      lerpX(leftArm, -0.3, 12);
+      lerpX(rightArm, -0.3, 12);
+      lerpX(leftForearm, 1.3, 14);
+      lerpX(rightForearm, 1.3, 14);
+      lerpZ(headRef, shake * 0.1, 12);
+      break;
+    }
+    case "❤️": {
+      // 양손을 가슴 앞으로 모아 하트를 표현, 살짝 두근거리는 펄스
+      const pulse = 1 + Math.sin(phase * 3) * 0.04;
+      lerpZ(leftArm, 1.2, 10);
+      lerpZ(rightArm, -1.2, 10);
+      lerpX(leftArm, -1.0, 10);
+      lerpX(rightArm, -1.0, 10);
+      lerpX(leftForearm, 0.9, 12);
+      lerpX(rightForearm, 0.9, 12);
+      if (group.current) group.current.scale.set(pulse, pulse, pulse);
+      lerpX(headRef, -0.08, 8);
+      break;
+    }
+    case "🎉": {
+      // 만세 하듯 양팔을 번쩍 들고, 통통 튀는 점프를 반복
+      const hop = Math.max(0, Math.sin(phase * 6));
+      lerpX(leftArm, -2.5, 14);
+      lerpX(rightArm, -2.5, 14);
+      lerpZ(leftArm, 0.3 + Math.sin(phase * 6) * 0.15, 14);
+      lerpZ(rightArm, -0.3 - Math.sin(phase * 6 + Math.PI) * 0.15, 14);
+      lerpX(leftForearm, -0.2, 12);
+      lerpX(rightForearm, -0.2, 12);
+      if (group.current) group.current.position.y += hop * 0.14;
+      lerpX(leftUpLeg, -hop * 0.2, 14);
+      lerpX(rightUpLeg, -hop * 0.2, 14);
+      break;
+    }
+    case "😢": {
+      // 고개를 떨구고 팔을 들어 눈가를 닦는 느낌, 어깨가 들썩이는 흐느낌
+      const sob = Math.sin(phase * 4) * 0.06;
+      lerpX(spine, 0.14 + sob, 10);
+      lerpX(headRef, 0.32, 10);
+      lerpX(leftArm, -1.3, 10);
+      lerpX(rightArm, -1.3, 10);
+      lerpZ(leftArm, 0.5, 10);
+      lerpZ(rightArm, -0.5, 10);
+      lerpX(leftForearm, 1.5, 12);
+      lerpX(rightForearm, 1.5, 12);
+      lerpZ(tailRef, sob, 8);
+      break;
+    }
+    default: {
+      // 알 수 없는 이모트: 가볍게 한 번 통통 뛰는 정도의 무난한 기본 리액션
+      const hop = Math.max(0, Math.sin(phase * 5));
+      lerpX(leftArm, -1.2 * hop, 14);
+      lerpX(rightArm, -1.2 * hop, 14);
+      if (group.current) group.current.position.y += hop * 0.05;
+    }
+  }
+}
+
+/**
  * 외부 GLB/API 없이 코드로 직접 만든 캐릭터를 렌더링하고, AvatarModel.jsx(예전 GLB 아바타용)와
  * 동일한 걷기/정지 애니메이션 수식을 그대로 재사용합니다 — 다만 GLTF 본(bone) 대신
  * 코드로 만든 관절 그룹(useRef)을 직접 회전시킵니다. 로딩이 필요 없어 Suspense도 필요 없습니다.
  */
-export default function PresetAvatarModel({ presetId, movingRef, runningRef, groundedRef, offsetY = 0 }) {
+export default function PresetAvatarModel({
+  presetId,
+  movingRef,
+  runningRef,
+  groundedRef,
+  verticalVelocityRef, // optional: ref holding signed vertical velocity, lets us tell "rising" from "falling" in mid-air
+  emote, // optional: current emote string (e.g. "👋"), or "" / undefined when none is playing
+  offsetY = 0,
+}) {
   const preset = useMemo(() => getAvatarPreset(presetId), [presetId]);
   const group = useRef();
   const walkPhase = useRef(0);
+  const emotePhase = useRef(0);
+  const prevEmote = useRef("");
+  const prevGrounded = useRef(true);
+  const landSquash = useRef(0); // 0 = 평상시, 1 = 착지 직후(가장 눌린 상태) → 시간이 지나며 0으로 감쇠
 
   const spine = useRef();
+  const headRef = useRef();
   const leftUpLeg = useRef();
   const leftLeg = useRef();
   const rightUpLeg = useRef();
   const rightLeg = useRef();
   const leftArm = useRef();
   const rightArm = useRef();
+  const leftForearm = useRef();
+  const rightForearm = useRef();
   const tailRef = useRef();
 
   useFrame((state, delta) => {
@@ -242,53 +352,111 @@ export default function PresetAvatarModel({ presetId, movingRef, runningRef, gro
     const isMoving = !!movingRef?.current;
     const isRunning = !!runningRef?.current;
     const isGrounded = groundedRef ? groundedRef.current !== false : true;
+    const isEmoting = typeof emote === "string" && emote.length > 0;
+    const t = state.clock.elapsedTime;
 
-    // 항상 적용되는 가벼운 숨쉬기(idle) 상하 움직임
-    group.current.position.y = offsetY + Math.sin(state.clock.elapsedTime * 1.5) * 0.01;
+    // ── 착지 스쿼시: 방금 막 착지한 순간을 감지해서 살짝 눌렸다가 튕겨 돌아오는 느낌을 줌 ──
+    if (isGrounded && !prevGrounded.current) landSquash.current = 1;
+    prevGrounded.current = isGrounded;
+    landSquash.current = THREE.MathUtils.damp(landSquash.current, 0, 6, delta);
+    const squash = landSquash.current;
+
+    // 항상 적용되는 가벼운 숨쉬기(idle) 상하 움직임 + 착지 스쿼시(눌림)를 얹음
+    group.current.position.y = offsetY + Math.sin(t * 1.5) * 0.01 - squash * 0.06;
+    group.current.scale.set(1 + squash * 0.09, 1 - squash * 0.14, 1 + squash * 0.09);
 
     const setX = (ref, v) => ref.current && (ref.current.rotation.x = v);
-    const lerpX = (ref, target, t) => ref.current && (ref.current.rotation.x = THREE.MathUtils.lerp(ref.current.rotation.x, target, t));
-    const lerpY = (ref, target, t) => ref.current && (ref.current.rotation.y = THREE.MathUtils.lerp(ref.current.rotation.y, target, t));
-    const lerpZ = (ref, target, t) => ref.current && (ref.current.rotation.z = THREE.MathUtils.lerp(ref.current.rotation.z, target, t));
+    const setZ = (ref, v) => ref.current && (ref.current.rotation.z = v);
+    const lerpAxis = (ref, axis, target, lambda) =>
+      ref.current && (ref.current.rotation[axis] = THREE.MathUtils.damp(ref.current.rotation[axis], target, lambda, delta));
+    const lerpX = (ref, target, lambda = 10) => lerpAxis(ref, "x", target, lambda);
+    const lerpY = (ref, target, lambda = 10) => lerpAxis(ref, "y", target, lambda);
+    const lerpZ = (ref, target, lambda = 10) => lerpAxis(ref, "z", target, lambda);
+
+    if (isEmoting) {
+      // 새로 시작된(또는 다른 종류로 바뀐) 이모트면 위상을 0부터 다시 시작 — 매번 자연스럽게 처음부터 재생
+      if (emote !== prevEmote.current) emotePhase.current = 0;
+      prevEmote.current = emote;
+      emotePhase.current += delta;
+      playEmote(emote, emotePhase.current, {
+        spine, headRef, leftArm, rightArm, leftForearm, rightForearm,
+        leftUpLeg, rightUpLeg, leftLeg, rightLeg, tailRef, group,
+        lerpX, lerpY, lerpZ, setX, setZ,
+      });
+      walkPhase.current = 0;
+      return;
+    }
+    prevEmote.current = "";
 
     if (!isGrounded) {
-      // 공중에 떠 있을 때: 다리를 살짝 접은 점프 포즈로 고정
-      lerpX(leftUpLeg, 0.35, 0.3);
-      lerpX(rightUpLeg, 0.35, 0.3);
-      lerpX(leftLeg, 0.55, 0.3);
-      lerpX(rightLeg, 0.55, 0.3);
-      lerpX(leftArm, -0.4, 0.3);
-      lerpX(rightArm, -0.4, 0.3);
+      // verticalVelocityRef가 있으면 상승/하강을 구분한 포즈를(더 자연스러움), 없으면 예전처럼 단일 점프 포즈를 사용
+      const vy = verticalVelocityRef?.current;
+      const rising = typeof vy === "number" ? vy > 0.4 : true;
+      if (rising) {
+        // 뛰어오르는 중: 다리를 뒤로 살짝 접고 팔은 뒤로 흔들며 위로 추진하는 느낌
+        lerpX(leftUpLeg, -0.15, 10);
+        lerpX(rightUpLeg, -0.15, 10);
+        lerpX(leftLeg, 0.9, 10);
+        lerpX(rightLeg, 0.9, 10);
+        lerpX(leftArm, -1.6, 10);
+        lerpX(rightArm, -1.6, 10);
+        lerpX(leftForearm, -0.3, 10);
+        lerpX(rightForearm, -0.3, 10);
+      } else {
+        // 떨어지는 중: 착지에 대비해 다리를 앞으로 살짝 뻗고 팔을 벌려 균형을 잡는 포즈
+        lerpX(leftUpLeg, 0.4, 10);
+        lerpX(rightUpLeg, 0.4, 10);
+        lerpX(leftLeg, 0.35, 10);
+        lerpX(rightLeg, 0.35, 10);
+        lerpX(leftArm, -0.5, 10);
+        lerpX(rightArm, -0.5, 10);
+        lerpZ(leftArm, 0.35, 10);
+        lerpZ(rightArm, -0.35, 10);
+      }
+      lerpX(spine, rising ? -0.1 : 0.08, 8);
       walkPhase.current = 0;
     } else if (isMoving) {
       const speedMultiplier = isRunning ? 1.7 : 1;
-      const swingAmount = isRunning ? 0.75 : 0.5;
-      const armAmount = isRunning ? 0.9 : 0.6;
+      const swingAmount = isRunning ? 0.85 : 0.5;
+      const armAmount = isRunning ? 1.0 : 0.6;
 
       walkPhase.current += delta * WALK_SPEED * speedMultiplier;
       const swing = Math.sin(walkPhase.current) * swingAmount;
       const swingOpp = -swing;
-      const kneeBend = (phase) => Math.max(0, Math.sin(phase)) * (isRunning ? 0.9 : 0.6);
+      const kneeBend = (phase) => Math.max(0, Math.sin(phase)) * (isRunning ? 0.95 : 0.6);
+      const elbowBend = (phase) => 0.35 + Math.max(0, Math.sin(phase)) * (isRunning ? 0.75 : 0.35);
 
-      setX(leftUpLeg, swing);
-      setX(rightUpLeg, swingOpp);
-      setX(leftLeg, kneeBend(walkPhase.current + Math.PI));
-      setX(rightLeg, kneeBend(walkPhase.current));
-      setX(leftArm, swingOpp * armAmount);
-      setX(rightArm, swing * armAmount);
-      lerpY(spine, Math.sin(walkPhase.current) * (isRunning ? 0.08 : 0.05), 0.5);
-      lerpZ(tailRef, Math.sin(walkPhase.current) * 0.35, 0.4);
+      // 사인파를 직접 대입(set)하는 대신 살짝 감쇠(damp)해서 따라가게 하면, 걸음 자체는 여전히
+      // 주기적이고 또렷하지만 관절이 무게감 있게 "따라오는" 느낌이 붙고, 다른 상태(정지/이모트 등)에서
+      // 막 전환된 순간에도 값이 툭 튀지 않고 부드럽게 이어집니다.
+      lerpX(leftUpLeg, swing, 22);
+      lerpX(rightUpLeg, swingOpp, 22);
+      lerpX(leftLeg, kneeBend(walkPhase.current + Math.PI), 22);
+      lerpX(rightLeg, kneeBend(walkPhase.current), 22);
+      lerpX(leftArm, swingOpp * armAmount, 18);
+      lerpX(rightArm, swing * armAmount, 18);
+      lerpX(leftForearm, elbowBend(walkPhase.current), 18);
+      lerpX(rightForearm, elbowBend(walkPhase.current + Math.PI), 18);
+      lerpX(spine, isRunning ? -0.16 : -0.04, 8); // 달릴수록 상체를 앞으로 더 기울여 역동적으로
+      lerpY(spine, Math.sin(walkPhase.current) * (isRunning ? 0.1 : 0.05), 10);
+      lerpZ(tailRef, Math.sin(walkPhase.current) * 0.35, 10);
+      lerpX(headRef, Math.sin(walkPhase.current * 2) * (isRunning ? 0.05 : 0.02), 10); // 보폭에 맞춘 아주 미세한 머리 끄덕임
     } else {
       // 정지 시 모든 관절을 부드럽게 rest pose(0)로 복귀
-      lerpX(leftUpLeg, 0, RETURN_LERP);
-      lerpX(rightUpLeg, 0, RETURN_LERP);
-      lerpX(leftLeg, 0, RETURN_LERP);
-      lerpX(rightLeg, 0, RETURN_LERP);
-      lerpX(leftArm, 0, RETURN_LERP);
-      lerpX(rightArm, 0, RETURN_LERP);
-      lerpY(spine, 0, RETURN_LERP);
-      // 가만히 있을 땐 꼬리를 천천히 흔들어 생동감 부여
-      lerpZ(tailRef, Math.sin(state.clock.elapsedTime * 2) * 0.12, 0.2);
+      lerpX(leftUpLeg, 0, 10);
+      lerpX(rightUpLeg, 0, 10);
+      lerpX(leftLeg, 0, 10);
+      lerpX(rightLeg, 0, 10);
+      lerpX(leftArm, 0, 10);
+      lerpX(rightArm, 0, 10);
+      lerpX(leftForearm, 0.12, 10); // 완전히 일직선인 팔은 마네킹처럼 보여서, 아주 살짝 굽혀 힘 뺀 느낌을 줌
+      lerpX(rightForearm, 0.12, 10);
+      lerpX(spine, 0, 10);
+      lerpY(spine, 0, 10);
+      // 가만히 있을 땐 꼬리를 천천히 흔들고, 이따금 고개를 갸웃해 생동감 부여
+      lerpZ(tailRef, Math.sin(t * 2) * 0.12, 8);
+      lerpZ(headRef, Math.sin(t * 0.6) * 0.08, 4);
+      lerpX(headRef, 0, 6);
       walkPhase.current = 0;
     }
   });
@@ -373,30 +541,36 @@ export default function PresetAvatarModel({ presetId, movingRef, runningRef, gro
 
           <group position={[-0.32, 0.4, 0]}>
             <Limb jointRef={leftArm} length={0.35} radius={0.06} color={preset.body} translucent={translucent}>
-              <mesh castShadow position={[0, -0.35, 0]}>
-                <capsuleGeometry args={[0.055, 0.24, 6, 12]} />
-                <Mat color={preset.skin} translucent={translucent} />
-              </mesh>
-              <mesh castShadow position={[0, -0.5, 0]}>
-                <sphereGeometry args={[0.06, 10, 10]} />
-                <Mat color={preset.skin} translucent={translucent} />
-              </mesh>
+              <group position={[0, -0.35, 0]} ref={leftForearm}>
+                <mesh castShadow position={[0, 0, 0]}>
+                  <capsuleGeometry args={[0.055, 0.24, 6, 12]} />
+                  <Mat color={preset.skin} translucent={translucent} />
+                </mesh>
+                <mesh castShadow position={[0, -0.15, 0]}>
+                  <sphereGeometry args={[0.06, 10, 10]} />
+                  <Mat color={preset.skin} translucent={translucent} />
+                </mesh>
+              </group>
             </Limb>
           </group>
           <group position={[0.32, 0.4, 0]}>
             <Limb jointRef={rightArm} length={0.35} radius={0.06} color={preset.body} translucent={translucent}>
-              <mesh castShadow position={[0, -0.35, 0]}>
-                <capsuleGeometry args={[0.055, 0.24, 6, 12]} />
-                <Mat color={preset.skin} translucent={translucent} />
-              </mesh>
-              <mesh castShadow position={[0, -0.5, 0]}>
-                <sphereGeometry args={[0.06, 10, 10]} />
-                <Mat color={preset.skin} translucent={translucent} />
-              </mesh>
+              <group position={[0, -0.35, 0]} ref={rightForearm}>
+                <mesh castShadow position={[0, 0, 0]}>
+                  <capsuleGeometry args={[0.055, 0.24, 6, 12]} />
+                  <Mat color={preset.skin} translucent={translucent} />
+                </mesh>
+                <mesh castShadow position={[0, -0.15, 0]}>
+                  <sphereGeometry args={[0.06, 10, 10]} />
+                  <Mat color={preset.skin} translucent={translucent} />
+                </mesh>
+              </group>
             </Limb>
           </group>
 
-          <Head preset={preset} />
+          <group ref={headRef}>
+            <Head preset={preset} />
+          </group>
         </group>
       </group>
     </group>

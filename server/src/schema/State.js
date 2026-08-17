@@ -34,10 +34,14 @@ class WorldState extends Schema {
   constructor() {
     super();
     this.players = new MapSchema();
+    this.mapId = "main"; // "main"(메인 광장) 또는 관리자가 업로드한 커스텀 방의 slug (예: "room2")
+    this.modelUrl = ""; // mapId가 "main"이 아닐 때, 클라이언트가 불러올 .glb의 서버 경로 (예: "/uploads/models/room2-....glb")
   }
 }
 defineTypes(WorldState, {
   players: { map: Player },
+  mapId: "string",
+  modelUrl: "string",
 });
 
 export { Player, WorldState };

@@ -29,8 +29,10 @@ export default function LocalPlayerController() {
   const spawned = useRef(false);
   const sessionId = usePlayersStore((s) => s.sessionId);
   const selfData = usePlayersStore((s) => s.players[sessionId]);
+  const mapId = usePlayersStore((s) => s.mapId);
 
   const lastJumpAt = useRef(-Infinity);
+  const verticalVelocityRef = useRef(0); // 상승/하강 포즈 구분용 — PresetAvatarModel에 그대로 전달
   const { camera } = useThree();
   // 카메라 정면/우측 방향을 매 프레임 재계산하기 위한 스크래치 벡터 (매 프레임 new Vector3 생성 방지)
   const camForward = useRef(new THREE.Vector3());
@@ -42,6 +44,14 @@ export default function LocalPlayerController() {
   const dir = useRef(new THREE.Vector3());
 
   useEffect(() => bindKeyboard(), []);
+
+  // 이 컴포넌트는 방을 옮겨도(World.jsx의 mapId 스위치) 다시 마운트되지 않고 계속 살아있으므로,
+  // spawned.current를 그대로 두면 새 방에서도 예전 방의 물리 위치에 그대로 남아있게 됩니다.
+  // mapId가 바뀔 때마다 "아직 스폰 안 됨" 상태로 되돌려서, 다음 프레임에 서버가 새로 배정한
+  // 위치(selfData.x/z)로 다시 순간이동하도록 합니다.
+  useEffect(() => {
+    spawned.current = false;
+  }, [mapId]);
 
   useFrame((state, delta) => {
     const rb = rigidBody.current;
@@ -102,6 +112,7 @@ export default function LocalPlayerController() {
     }
 
     rb.setLinvel({ x: newVelX, y: newVelY, z: newVelZ }, true);
+    verticalVelocityRef.current = newVelY;
 
     if (isMoving) {
       facing.current = Math.atan2(dir.current.x, dir.current.z);
@@ -145,6 +156,8 @@ export default function LocalPlayerController() {
           movingRef={movingRef}
           runningRef={runningRef}
           groundedRef={groundedRef}
+          verticalVelocityRef={verticalVelocityRef}
+          emote={selfData?.emote}
           offsetY={-CAPSULE_TOTAL_HALF}
         />
       </group>
