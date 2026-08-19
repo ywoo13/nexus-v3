@@ -16,12 +16,12 @@ nexus/
 │   └── src/
 │       ├── index.js         # Server entry point (landing page + status API + auth/manager routers)
 │       ├── db.js            # Postgres connection pool + users/bans schema
-│       ├── auth.js          # Google login verification / session issue+restore / profile save routes
+│       ├── auth.js          # Google + Naver login verification / session issue+restore / profile save routes
 │       ├── manager.js       # Admin dashboard router (page + registered users / ban list / custom room APIs)
 │       ├── storage.js       # Saves/deletes uploaded room .glb files — Supabase Storage if configured, else local disk
 │       ├── basicAuth.js     # HTTP Basic Auth middleware protecting /manager and /monitor
 │       ├── admin.js         # Checks ADMIN_EMAILS whitelist for admin status
-│       ├── bans.js          # Ban list read/insert/delete — keyed by Google account ID or IP
+│       ├── bans.js          # Ban list read/insert/delete — keyed by account (provider:providerId) or IP
 │       ├── rooms/
 │       │   └── WorldRoom.js # Room logic: join/leave/move/chat/emote, kick/ban commands, mapId/custom-room resolution
 │       └── schema/
@@ -34,7 +34,7 @@ nexus/
         ├── scenes/World.jsx         # 3D canvas, lighting, ground, picks PlazaMap vs CustomRoomMap by mapId
         ├── components/
         │   ├── SplashScreen.jsx     # Logo screen shown briefly on launch
-        │   ├── AuthScreen.jsx       # Google login / guest entry screen
+        │   ├── AuthScreen.jsx       # Google / Naver login / guest entry screen
         │   ├── LoadingScreen.jsx    # Loading overlay (server connect, etc.)
         │   ├── RoomSelectScreen.jsx # Pre-join: pick Main Plaza or a custom room before connecting
         │   ├── RoomSwitcher.jsx     # In-world 🌐 button/panel to move to another room mid-session
@@ -42,7 +42,7 @@ nexus/
         │   ├── FilmGrain.jsx        # React wrapper for the custom effects/filmGrainEffect.js shader
         │   ├── TouchDPad.jsx        # Mobile/tablet movement D-pad
         │   ├── TouchActionButtons.jsx # Mobile run/jump buttons
-        │   ├── CameraRig.jsx        # Camera that follows the local player (wraps OrbitControls)
+        │   ├── CameraRig.jsx        # Camera + PerspectiveCamera live inside a group that follows the player; OrbitControls orbits a fixed local point
         │   ├── AvatarCustomizer.jsx # Pre-join: avatar preset gallery → nickname entry
         │   ├── PresetAvatarModel.jsx # Self-hosted preset avatar gallery (no external API) + walk/run/jump/emote animation
         │   ├── PlazaMap.jsx         # Real GLTF map loader (falls back to PlazaBackdrop/PlazaProps automatically)
@@ -66,7 +66,7 @@ nexus/
             ├── store.js                 # zustand global state (player list, current mapId/modelUrl, etc.)
             ├── graphicsSettings.js      # zustand + localStorage: high-quality FX / film-grain shader toggle
             └── localPlayerPosition.js   # Local player's latest position, read by the camera
-└── render.yaml          # Render deployment blueprint (server Web Service + client Static Site)
+└── render2.yaml          # Render deployment blueprint (server Web Service + client Static Site)
 ```
 
 ## Getting Started
@@ -163,15 +163,16 @@ The server (Colyseus, needs a persistent WebSocket connection) and the client (s
 
 ### Option A — One-shot via Blueprint (recommended)
 
-The `render.yaml` at the repo root defines both services.
+The `render2.yaml` at the repo root defines both services.
 
-1. Render dashboard → **New → Blueprint** → select this repo.
-2. Render reads `render.yaml` and sets up `nexus-server` (Web Service) and `nexus-client` (Static Site) automatically.
-3. `GOOGLE_CLIENT_ID`/`VITE_GOOGLE_CLIENT_ID` are already filled in inside `render.yaml` (OAuth client IDs are safe to expose publicly, so they're committed as-is) — nothing to type there.
+1. Render dashboard → **New → Blueprint** → select this repo. Render's default auto-detected filename is `render.yaml`; since this project uses `render2.yaml`, point the Blueprint file path at `render2.yaml` in the setup screen (Render lets you specify a custom blueprint filename there).
+2. Render reads `render2.yaml` and sets up `nexus-server` (Web Service) and `nexus-client` (Static Site) automatically.
+3. `GOOGLE_CLIENT_ID`/`VITE_GOOGLE_CLIENT_ID` are already filled in inside `render2.yaml` (OAuth client IDs are safe to expose publicly, so they're committed as-is) — nothing to type there.
 4. You'll be prompted to fill in the remaining values marked `sync: false`:
    - `DATABASE_URL` — your Postgres connection string (see [Database](#database-postgres) above)
    - `MANAGER_PASSWORD` — password for `/manager` and `/monitor`
-   - `ADMIN_EMAILS` — Google emails that should show the 👑 in-game admin badge (comma-separated)
+   - `ADMIN_EMAILS` — emails (Google or Naver accounts) that should show the 👑 in-game admin badge (comma-separated)
+   - `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `NAVER_REDIRECT_URI` — only needed if you want Naver login; leave blank to skip it (see [Setup — Naver](#setup--naver) above)
    - `ALLOWED_ORIGIN`, `VITE_SERVER_URL` — **leave these empty on the very first deploy.** Once both services are live and you have real URLs (e.g. `https://nexus-server.onrender.com`), fill them in per "Post-deploy steps" below and redeploy.
 5. `JWT_SECRET` is auto-generated by Render as a secure random value (nothing to enter).
 6. Click `Deploy Blueprint`.
@@ -214,7 +215,7 @@ Both services need to be live once before you have real URLs, so deploy first wi
 Visiting `http://localhost:2567/manager` triggers your browser's built-in login prompt (HTTP Basic Auth). You need `MANAGER_USER`/`MANAGER_PASSWORD` from `server/.env` to get in.
 
 - Active room count / online players (refreshes every 5s)
-- List of registered Google accounts (nickname, email, avatar preset, signup date, last login)
+- List of registered accounts — Google and Naver (nickname, email, avatar preset, signup date, last login)
 - **Ban list** — accounts/IPs banned in-game via `/ban`, with an "Unban" button
 - **Room management** — upload a `.glb` to create a new room (e.g. "room2"), see all custom rooms, delete them (see [Multi-Room / Custom Rooms](#multi-room--custom-rooms) below)
 - If `MANAGER_PASSWORD` isn't set, the page refuses to load at all (prevents accidentally leaving it open)
@@ -246,12 +247,12 @@ Beyond the built-in Main Plaza (`client/public/models/plaza.glb`, bundled with t
 - ⚠️ On hosts with an ephemeral filesystem (e.g. Render's free tier, which wipes disk on every redeploy/restart), local-disk uploads are lost along with everything else that isn't in Postgres. **Set up Supabase Storage (or another external store) before deploying anywhere with an ephemeral filesystem** — local disk is fine for local development only.
 - The Main Plaza's model stays a client-bundled asset (not swappable from `/manager`) — only additional rooms go through the upload flow.
 
-### In-game admin (Google email whitelist)
+### In-game admin (email whitelist)
 
-List developer Google emails in `server/.env`'s `ADMIN_EMAILS` (comma-separated), and anyone who logs in with one of those accounts gets a **👑** badge next to their name in-game, plus kick/ban privileges.
+List developer emails in `server/.env`'s `ADMIN_EMAILS` (comma-separated) — this works regardless of whether the account logged in with Google or Naver, since it's matched on email address. Anyone who logs in with one of those accounts gets a **👑** badge next to their name in-game, plus kick/ban privileges.
 
 ```
-ADMIN_EMAILS=you@gmail.com,teammate@gmail.com
+ADMIN_EMAILS=you@gmail.com,teammate@naver.com
 ```
 
 **How it's secured**: the client never just claims "I'm an admin" (that could be forged via devtools). Instead:
@@ -274,24 +275,42 @@ Admins (👑) can moderate other players using slash commands typed directly int
 
 - Admin status is checked purely from the server-held `sender.isAdmin` (the whitelist result computed above) — a non-admin typing `/kick` is simply ignored by the server.
 - You can't target yourself or another admin.
-- **Bans record both the account (Google ID) and the IP.** Logged-in users are banned by account; guests are banned by IP (IP-based bans have known limitations on shared Wi-Fi/mobile data/dynamic IPs — someone else on the same coffee-shop Wi-Fi could briefly be affected).
+- **Bans record both the account (`provider:providerId`, e.g. `google:1093...` or `naver:aB3x...`) and the IP.** Logged-in users are banned by account; guests are banned by IP (IP-based bans have known limitations on shared Wi-Fi/mobile data/dynamic IPs — someone else on the same coffee-shop Wi-Fi could briefly be affected).
 - **Kicked/banned sessions can't exploit the auto-reconnect feature.** Since Colyseus's `client.leave(code)` still reports as an "unintended disconnect" (`consented = false`) even when the server forces it, a kick without special handling would just trigger the 20-second auto-reconnect and undo itself. Forced disconnects are tracked separately so reconnection is explicitly skipped for them (`forcedLeaveSessions`).
 - Bans can be lifted anytime from the "Ban list" section of `/manager`.
 
-## Google Login + Per-Account Avatar Storage
+## Login (Google + Naver) + Per-Account Avatar Storage
 
-Logging in restores your avatar/nickname on your next visit. Guest play remains fully available (no login required, same as before).
+Logging in restores your avatar/nickname on your next visit. Guest play remains fully available (no login required, same as before). Two providers are supported — **Google** and **Naver** — and either one gives the same account features (saved avatar/nickname, ✓/👑 badges, ban-by-account).
 
-### How it works
+### Account model
+
+Internally, an account is identified by `(provider, providerId)` — e.g. `("google", "109385...")` or `("naver", "aB3xZ9...")` — rather than a single Google ID, so the same Postgres `users` table can hold both kinds of accounts side by side. The app's own login token (JWT) carries both fields (`{ sub: providerId, provider }`).
+
+### How Google login works
 
 1. The client shows a Google sign-in button via Google Identity Services; on success it receives a Google-signed **ID token**.
 2. That token is sent to the server (`POST /api/auth/google`), which verifies it's a genuine Google-issued token using `google-auth-library`.
 3. First-time accounts get a new row in Postgres; returning accounts just get their `last_login_at` updated.
 4. The server issues its own signed **app token (JWT, 30-day expiry)**, which the client stores in `localStorage`.
-5. On the next visit, that app token is used to call `GET /api/auth/session` for automatic login, pre-filling the saved avatar preset/nickname into the avatar screen.
-6. When joining the plaza (`PUT /api/auth/profile`), whatever avatar/nickname was just chosen is saved to the account so it's restored next time.
 
-### Setup
+### How Naver login works
+
+Naver doesn't offer a client-side ID-token flow like Google — it's a traditional OAuth2 **authorization code** flow that requires a client secret, which must stay server-side. So the server drives the whole thing:
+
+1. Clicking "네이버로 로그인" opens a small **popup window** pointed at `GET /api/auth/naver/start`.
+2. The server generates a CSRF-protection `state` value, stores it in a short-lived (5 min) `httpOnly` cookie scoped to `/api/auth/naver`, and redirects the popup to Naver's login page.
+3. After the user logs in/consents on Naver, Naver redirects the popup back to `GET /api/auth/naver/callback` with an authorization `code`.
+4. The callback checks the `state` cookie matches, exchanges the `code` for an access token (`POST` to `nid.naver.com/oauth2.0/token` using `NAVER_CLIENT_SECRET`), and fetches the profile from `openapi.naver.com/v1/nid/me`.
+5. The account is created/updated in Postgres exactly like the Google path, and the server issues the same kind of app JWT.
+6. The popup sends the result back to the main window via `window.opener.postMessage(...)` (restricted to the app's own origin) and closes itself — the token is never put in a URL, so it can't leak through browser history or `Referer` headers.
+
+Both providers converge on the same downstream behavior:
+
+- On the next visit, the saved app token is used to call `GET /api/auth/session` for automatic login, pre-filling the saved avatar preset/nickname into the avatar screen.
+- When joining the plaza (`PUT /api/auth/profile`), whatever avatar/nickname was just chosen is saved to the account so it's restored next time.
+
+### Setup — Google
 
 > This project ships with the Google client ID already filled into `server/.env` and `client/.env`, and `http://localhost:5173` already registered as an authorized origin. Follow these steps only if you need to set it up from scratch.
 
@@ -303,12 +322,32 @@ Logging in restores your avatar/nickname on your next visit. Guest play remains 
 4. Change `server/.env`'s `JWT_SECRET` to a random string (used to sign app tokens).
 5. `npm install && npm run dev` (both server and client).
 
-The app works fine without any of this — the login button just won't do anything, and "Continue as guest" still works exactly as before.
+### Setup — Naver
+
+Naver login is **optional** — without it configured, the button just shows a "not configured" error and everything else (Google, guest play) works as before.
+
+1. Register an application at [Naver Developers → Application](https://developers.naver.com/apps) ("애플리케이션 등록").
+2. Under **사용 API (APIs used)**, add **네이버 로그인 (Naver Login)**.
+3. Under **제공 정보 선택 (information to request)**, enable at least **이메일 (email)** and **이름 (name)** if you want those to show up on the account (name falls back to your Naver nickname if not granted).
+4. Set:
+   - **서비스 URL** → your client's URL (`http://localhost:5173` for local dev).
+   - **네이버 로그인 Callback URL** → your server's `/api/auth/naver/callback` (`http://localhost:2567/api/auth/naver/callback` for local dev). This must match `NAVER_REDIRECT_URI` **exactly**.
+5. Copy the issued **Client ID** / **Client Secret** into `server/.env`:
+   ```
+   NAVER_CLIENT_ID=...
+   NAVER_CLIENT_SECRET=...
+   NAVER_REDIRECT_URI=http://localhost:2567/api/auth/naver/callback
+   ```
+   (Nothing goes in `client/.env` — the client only ever talks to your own server, never to Naver directly.)
+6. When deploying, also set `ALLOWED_ORIGIN` to your deployed client URL — the popup uses it to know which origin it's allowed to `postMessage` the login result to — and set `NODE_ENV=production` so the CSRF-protection cookie gets the `Secure` flag over HTTPS.
+
+The app works fine without any of this — the login buttons just won't do anything (or show an error), and "Continue as guest" still works exactly as before.
 
 ### Notes
 
-- **Nickname display**: your nickname is always shown above your avatar, logged in or not. Accounts logged in with Google get a **✓ verified badge** (admins get **👑**) so other players can tell them apart from guests. This flag is never taken from client-side claims — it's determined by the game server verifying the login token itself; see "In-game admin" above for details. Guests type a fresh nickname every session and it's never saved — **one-time use only**.
+- **Nickname display**: your nickname is always shown above your avatar, logged in or not. Accounts logged in with Google or Naver get a **✓ verified badge** (admins get **👑**) so other players can tell them apart from guests. This flag is never taken from client-side claims — it's determined by the game server verifying the login token itself; see "In-game admin" above for details. Guests type a fresh nickname every session and it's never saved — **one-time use only**.
 - Logging in and clicking "아바타 다시 고르기" (pick a different avatar) to choose a new preset, then rejoining, updates the saved avatar on your account at that point.
+- **Upgrading an existing deployment**: if you already had this project running with the old Google-only schema (`users.google_id` as the primary key), the server migrates it automatically and safely on next boot (see `initDb()` in `server/src/db.js`) — no manual SQL needed, and existing Google accounts/logins keep working.
 
 ## Movement Improvements (Acceleration, Running, Jumping)
 
@@ -358,6 +397,13 @@ Drop a file at `client/public/models/plaza.glb` and it's picked up automatically
 - **CSRF design overall** — the login token (JWT) is stored in `localStorage`, not a cookie, and attached to each request explicitly via the `Authorization` header in JS. Since it isn't auto-attached by the browser the way a cookie would be, a malicious site can't forge a request on a victim's behalf without somehow reading their token first — so state-changing endpoints like `/api/auth/profile` are CSRF-safe by design. The one place this broke down was `/manager` (fixed above), because Basic Auth *is* auto-attached like a cookie.
 - **XSS review** — `dangerouslySetInnerHTML`/`innerHTML` are never used anywhere in the React code; the only place raw DOM strings are built is `server/admin/manager.html`, which is plain JS (not React). Every piece of user-controlled data rendered there (nickname, email, avatar preset, ban target, reason) is confirmed to pass through an `escapeHtml()` helper (the `textContent` trick) before insertion. Chat messages/nicknames elsewhere are rendered via React JSX (`{message}`), which escapes by default, and in-scene nametags are WebGL text, not HTML, so they're not an XSS surface at all.
 
+## v3 — Naver Login Added
+
+- **New login provider: Naver** — full end-to-end support alongside Google (see [Login (Google + Naver) + Per-Account Avatar Storage](#login-google--naver--per-account-avatar-storage) above for how it works and how to set it up). Naver uses a server-driven OAuth2 authorization-code flow (Naver doesn't offer a client-only ID-token flow like Google does), completed via a popup + `postMessage` handshake so the login token never touches a URL.
+- **Account schema generalized** — `users` moved from a Google-only `google_id TEXT PRIMARY KEY` to `(provider, provider_id)` as the composite identity, so any number of login providers can share the same table. Existing deployments migrate automatically on next boot (`initDb()` in `db.js`), no manual SQL required.
+- **Bans generalized the same way** — ban records now use `target_type = 'account'` with a `provider:providerId` value; old `google_id`-typed ban rows from before this change are still honored.
+- A full pass through the rest of the (now much larger — multi-room, custom room uploads, graphics settings, film grain shader) v3 codebase turned up no further bugs beyond what's listed in "Latest Code Review Pass" below, which was carried forward unchanged.
+
 ## Latest Code Review Pass
 
 - **🔴 Timing attack on `/manager` and `/monitor` login** — the Basic Auth check compared the submitted username/password with plain `===`, which can leak how many leading characters matched through response-time differences. Switched to `crypto.timingSafeEqual` (`basicAuth.js`), and fixed a related edge case where a malformed `Authorization` header with no `:` separator could produce an unintended comparison.
@@ -392,6 +438,8 @@ The following were reviewed and fixed after receiving a prioritized bug list:
 - Added hover interactions on preset cards/buttons/links and a gradient accent line at the top of cards for overall visual polish.
 - **Lighting/postprocessing pass (v3):** switched to a proper 3-point rig (sun key light + sky/ground `hemisphereLight` fill + a cool rim light on the far side, so characters don't get lost against the backdrop), added `SoftShadows` (drei's PCSS approximation) for softer shadow edges, tuned `shadow-bias`/`shadow-normalBias` on the key light to reduce shadow acne, and switched the renderer to ACES filmic tone mapping for a less "flat" look. Added a light `@react-three/postprocessing` stack (mipmap `Bloom`, `Vignette`, a small `HueSaturation` boost) to both `World.jsx` and `AvatarPreviewCanvas.jsx` so the character-creation screen matches in-game color grading. Also fixed a real bug along the way: GLTF maps (`PlazaMap.jsx`'s real map, `CustomRoomMap.jsx`) never had `castShadow`/`receiveShadow` enabled on their meshes, so uploaded/imported maps were completely unlit by shadows — fixed by traversing the loaded scene once and turning both on.
 - **Graphics settings toggle + a hand-written shader (v3.1):** added a ⚙️ button (`GraphicsSettings.jsx`, `state/graphicsSettings.js`) so people on older/weaker devices can turn off the heavier effects — "고품질 그래픽" drops `SoftShadows`, `Bloom`/`Vignette`/`HueSaturation`, halves shadow-map resolution, and caps `dpr` to 1x. The preference is saved to `localStorage` and persists across sessions. Also added a genuinely custom effect (not one of the library's built-ins): `effects/filmGrainEffect.js` is a GLSL fragment shader — written against `postprocessing`'s `Effect` base class the same way its own built-in `ChromaticAberration` effect is — that layers a subtle animated film-grain noise with a small radial chromatic aberration (samples `inputBuffer` at UV-offset R/B channels near the screen edges). It's wired up as its own independent toggle ("필름 그레인") separate from the high-quality switch, via `FilmGrain.jsx` (the standard `useMemo` + `<primitive>` wrapper pattern for custom `@react-three/postprocessing` effects).
+- **Camera-follow rewrite (v3.2) — fixed a real jitter bug:** `CameraRig.jsx` used to manually shift `camera.position` and `OrbitControls.target` by hand every frame, then call `controls.update()`. That collided with `OrbitControls`' own internal `update()` call inside its pointer-drag handler (which fires mid-frame, before our target change lands), so dragging to orbit *while walking* made both update() calls fight over two different targets in the same frame — a violent camera shake that got worse the more you moved. Fixed by restructuring: the camera now lives inside a `<group>` that smoothly chases the player (`THREE.MathUtils.damp`), while `OrbitControls.target` stays at a **permanently fixed local point** (`(0, 0.9, 0)`, since panning is disabled) that's never touched again after the initial mount. Orbiting/zooming and following are now fully decoupled transforms that can never race each other, and `enableDamping` was turned on for a smoother drag feel now that it's safe to do so.
+- **Shadow bugs fixed (v3.3):** drei's `SoftShadows` (a global `THREE.ShaderChunk` patch used for the PCSS-style soft shadows added in v3) turned out to leave already-compiled shader programs in a broken/stuck state — shadows that had already rendered wouldn't clear, and toggling "고품질 그래픽" off didn't remove them either, since unmounting the component doesn't force already-compiled materials to recompile. Replaced it with `<Canvas shadows="soft">`, which just sets the renderer to the standard, well-tested `THREE.PCFSoftShadowMap` and has none of those issues. Also fixed the actual "shadow looks weird" cause: the key light's shadow camera frustum was a world-fixed 40×40 unit box with default near/far (0.5–500, terrible depth precision) — now `FollowSun` (in `World.jsx`) keeps the light + its shadow target locked to the local player's X/Z position every frame, so the frustum can be a much tighter 20×20 box with near/far tuned to 1–30, giving noticeably crisper, more correct-looking shadows at the same resolution. `ContactShadows` and `castShadow` on the key light are now both gated by the `highQuality` toggle too, so turning it off actually removes shadow rendering like it's supposed to (previously they ignored the toggle entirely).
 
 ## Ideas for What's Next
 

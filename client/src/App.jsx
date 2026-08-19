@@ -13,14 +13,16 @@ import RoomSwitcher from "./components/RoomSwitcher.jsx";
 import GraphicsSettings from "./components/GraphicsSettings.jsx";
 import { connectToWorld } from "./network/room.js";
 import { usePlayersStore } from "./state/store.js";
-import { restoreSession, loginWithGoogle, saveProfile, clearToken } from "./auth/session.js";
+import { restoreSession, loginWithGoogle, saveProfile, clearToken, completeNaverLogin } from "./auth/session.js";
+import { loginWithNaverPopup } from "./auth/naverAuth.js";
 
-// splash(로고) -> authChecking(저장된 로그인 확인) -> auth(구글 로그인/게스트)
+// splash(로고) -> authChecking(저장된 로그인 확인) -> auth(구글/네이버 로그인 또는 게스트)
 // -> avatar(아바타 생성/닉네임) -> roomSelect(입장할 방 고르기) -> connecting(서버 접속 중) -> world(입장 완료)
 export default function App() {
   const [phase, setPhase] = useState("splash");
   const [connectError, setConnectError] = useState(null);
-  const [googleUser, setGoogleUser] = useState(null);
+  // 구글 또는 네이버로 로그인한 계정 정보 (게스트면 null)
+  const [accountUser, setAccountUser] = useState(null);
   const [initialAvatarData, setInitialAvatarData] = useState(null);
   // avatar 단계에서 정한 닉네임/아바타를 roomSelect 단계로 넘겨서, 어느 방을 고르든 그대로 씁니다.
   const [pendingProfile, setPendingProfile] = useState(null);
@@ -37,14 +39,14 @@ export default function App() {
     setPhase("authChecking");
     const user = await restoreSession();
     if (user) {
-      applyGoogleUser(user);
+      applyAccountUser(user);
     } else {
       setPhase("auth");
     }
   }
 
-  function applyGoogleUser(user) {
-    setGoogleUser(user);
+  function applyAccountUser(user) {
+    setAccountUser(user);
     setInitialAvatarData({
       avatarPreset: user.avatarPreset,
       name: user.name,
@@ -54,18 +56,24 @@ export default function App() {
 
   async function handleGoogleLogin(credential) {
     const user = await loginWithGoogle(credential);
-    applyGoogleUser(user);
+    applyAccountUser(user);
+  }
+
+  async function handleNaverLogin() {
+    const result = await loginWithNaverPopup();
+    const user = completeNaverLogin(result);
+    applyAccountUser(user);
   }
 
   function handleGuest() {
-    setGoogleUser(null);
+    setAccountUser(null);
     setInitialAvatarData(null);
     setPhase("avatar");
   }
 
   function handleLogout() {
     clearToken();
-    setGoogleUser(null);
+    setAccountUser(null);
     setInitialAvatarData(null);
     setPhase("auth");
   }
@@ -83,7 +91,7 @@ export default function App() {
     setPhase("connecting");
     try {
       await connectToWorld({ ...pendingProfile, mapId });
-      if (googleUser) {
+      if (accountUser) {
         // 계정에 로그인된 상태면 이번에 고른 아바타/닉네임을 저장해서
         // 다음 접속 때 자동으로 불러오게 합니다 (실패해도 게임 진행엔 지장 없음).
         saveProfile(pendingProfile);
@@ -105,7 +113,7 @@ export default function App() {
   }
 
   if (phase === "auth") {
-    return <AuthScreen onLogin={handleGoogleLogin} onGuest={handleGuest} />;
+    return <AuthScreen onLogin={handleGoogleLogin} onNaverLogin={handleNaverLogin} onGuest={handleGuest} />;
   }
 
   if (phase === "avatar") {
@@ -113,7 +121,7 @@ export default function App() {
       <AvatarCustomizer
         onNext={handleAvatarNext}
         initialData={initialAvatarData}
-        googleUser={googleUser}
+        accountUser={accountUser}
         onLogout={handleLogout}
       />
     );

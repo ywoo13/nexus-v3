@@ -1,7 +1,7 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
-import { Canvas } from "@react-three/fiber";
-import { Environment, ContactShadows, SoftShadows } from "@react-three/drei";
+import { useFrame, Canvas } from "@react-three/fiber";
+import { Environment, ContactShadows } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette, HueSaturation } from "@react-three/postprocessing";
 import { Physics, RigidBody, CuboidCollider } from "@react-three/rapier";
 import Player from "../components/Player.jsx";
@@ -12,7 +12,66 @@ import CameraRig from "../components/CameraRig.jsx";
 import FilmGrain from "../components/FilmGrain.jsx";
 import { usePlayersStore } from "../state/store.js";
 import { useGraphicsSettings } from "../state/graphicsSettings.js";
+import { localPlayerPosition } from "../state/localPlayerPosition.js";
 import { API_BASE } from "../auth/session.js";
+
+const SUN_OFFSET = new THREE.Vector3(6, 9, 4); // 태양 위치 = 플레이어 기준 이 방향/거리만큼 항상 떨어져서 따라감
+
+/**
+ * 태양 역할의 directionalLight + 그 그림자 카메라(target)가 플레이어를 따라다니게 합니다.
+ * (직전 버전은 그림자 카메라 범위(-20~20, 40x40 유닛짜리 정사각형)가 월드 원점에 고정돼 있었는데,
+ *  그 넓은 범위를 1024~2048 해상도 그림자맵 하나로 커버하다 보니 텍셀 밀도가 낮아서 그림자 가장자리가
+ *  들쭉날쭉/뭉개진 이상한 모양으로 보였습니다. 플레이어를 따라다니게 하면 훨씬 좁은 범위(-10~10)만
+ *  커버하면 되니 같은 해상도로도 훨씬 또렷한 그림자가 나옵니다.)
+ */
+function FollowSun({ castShadow, mapSize }) {
+  const lightRef = useRef();
+  const targetRef = useRef();
+
+  useEffect(() => {
+    // JSX의 target={targetRef.current} 방식은 첫 렌더 시점엔 targetRef.current가 아직 null이라
+    // (ref는 마운트 이후에 채워짐) 기본 타겟(항상 원점 고정)이 붙어버리고, 이후엔 리렌더가 없어
+    // (여기 애니메이션은 전부 useFrame으로 ref만 직접 조작하므로) 영영 안 바뀝니다.
+    // 마운트 후 한 번, 두 ref가 모두 준비된 시점에 직접 연결해줘야 확실합니다.
+    if (lightRef.current && targetRef.current) {
+      lightRef.current.target = targetRef.current;
+    }
+  }, []);
+
+  useFrame((_, delta) => {
+    const light = lightRef.current;
+    const target = targetRef.current;
+    if (!light || !target) return;
+    const lambda = 6;
+    target.position.x = THREE.MathUtils.damp(target.position.x, localPlayerPosition.x, lambda, delta);
+    target.position.z = THREE.MathUtils.damp(target.position.z, localPlayerPosition.z, lambda, delta);
+    light.position.x = target.position.x + SUN_OFFSET.x;
+    light.position.y = SUN_OFFSET.y;
+    light.position.z = target.position.z + SUN_OFFSET.z;
+  });
+
+  return (
+    <>
+      <object3D ref={targetRef} position={[0, 0, 0]} />
+      <directionalLight
+        ref={lightRef}
+        position={[SUN_OFFSET.x, SUN_OFFSET.y, SUN_OFFSET.z]}
+        intensity={1.4}
+        color="#ffe8d6"
+        castShadow={castShadow}
+        shadow-mapSize={mapSize}
+        shadow-camera-left={-10}
+        shadow-camera-right={10}
+        shadow-camera-top={10}
+        shadow-camera-bottom={-10}
+        shadow-camera-near={1}
+        shadow-camera-far={30}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.03}
+      />
+    </>
+  );
+}
 
 export default function World() {
   const players = usePlayersStore((s) => s.players);
@@ -33,9 +92,10 @@ export default function World() {
 
   return (
     <Canvas
-      shadows
+      shadows="soft" // three.js 표준 PCFSoftShadowMap — 예전에 쓰던 drei의 SoftShadows(전역 셰이더 패치)는
+      // 켰다 끄면 이미 컴파일된 셰이더 프로그램에 패치가 눌러붙어서 그림자가 안 지워지거나 이상한
+      // 모양으로 굳어버리는 문제가 있어 제거했습니다. 이 표준 방식은 그런 부작용이 없습니다.
       dpr={highQuality ? [1, 1.5] : [1, 1]} // 저품질 모드에서는 레티나 배율도 아예 안 씀 (해상도 자체를 낮춤)
-      camera={{ position: [0, 4, 8], fov: 50 }}
       gl={{
         antialias: true,
         // ACES 필름톤 매핑 — 밝은 부분이 그냥 하얗게 날아가지 않고 부드럽게 롤오프되어
@@ -47,28 +107,13 @@ export default function World() {
       <color attach="background" args={["#dfe9f0"]} />
       <fog attach="fog" args={["#dfe9f0", 22, 55]} />
 
-      {/* ── 조명 리그: 태양(key) + 하늘/땅 반사광(fill) + 반대편 림 라이트, 3점 조명 구도 ── */}
+      {/* ── 조명 리그: 태양(key, 플레이어를 따라다님) + 하늘/땅 반사광(fill) + 반대편 림 라이트 ── */}
       <ambientLight intensity={0.32} color="#fff3ea" />
       <hemisphereLight args={["#aecdff", "#6b4b3a", 0.5]} />
-      <directionalLight
-        position={[6, 9, 4]}
-        intensity={1.4}
-        color="#ffe8d6"
-        castShadow
-        shadow-mapSize={highQuality ? [2048, 2048] : [1024, 1024]}
-        shadow-camera-left={-20}
-        shadow-camera-right={20}
-        shadow-camera-top={20}
-        shadow-camera-bottom={-20}
-        shadow-bias={-0.0004}
-        shadow-normalBias={0.03}
-      />
+      <FollowSun castShadow={highQuality} mapSize={highQuality ? [2048, 2048] : [1024, 1024]} />
       {/* 태양 반대편에서 은은하게 채워주는 차가운 림 라이트 — 캐릭터 실루엣이 배경에 묻히지 않게 함.
           그림자는 안 만듦(캐스트 안 켬) — 성능상 그림자맵 2장을 계산할 필요는 없어서 */}
       <directionalLight position={[-7, 5, -6]} intensity={0.45} color="#9fc4ff" />
-      {/* 그림자 가장자리를 부드럽게(PCSS 근사) — highQuality가 꺼져 있으면 아예 렌더링 안 해서
-          비용을 완전히 없앱니다 (기본 PCF 그림자로 자동 대체됨) */}
-      {highQuality && <SoftShadows size={14} samples={10} focus={0.7} />}
       <Environment preset="sunset" background blur={0.7} />
 
       <Physics gravity={[0, -9.81, 0]}>
@@ -94,7 +139,9 @@ export default function World() {
         <LocalPlayerController />
       </Physics>
 
-      <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={40} blur={2.2} />
+      {/* highQuality가 꺼지면 이 블롭 그림자도 같이 꺼져서, "버튼 꺼도 그림자가 안 없어진다"는
+          문제가 재발하지 않게 했습니다 (예전엔 highQuality와 무관하게 항상 켜져 있었음) */}
+      {highQuality && <ContactShadows position={[0, 0.01, 0]} opacity={0.45} scale={40} blur={2.2} />}
 
       {/* ── 후처리: ⚙️ 그래픽 설정(GraphicsSettings.jsx)에서 개별적으로 켜고 끌 수 있음 ──
           - highQuality: 밝은 부분 은은한 발광(Bloom) + 화면 가장자리 비네트 + 채도 부스트
@@ -109,7 +156,7 @@ export default function World() {
         </EffectComposer>
       )}
 
-      <CameraRig />
+      <CameraRig /> {/* 기본 카메라(PerspectiveCamera)도 이 안에서 만듭니다 — 위 Canvas의 camera prop 대신 */}
     </Canvas>
   );
 }

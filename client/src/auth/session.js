@@ -33,6 +33,14 @@ export async function loginWithGoogle(credential) {
   return data.user;
 }
 
+// 네이버 로그인은 팝업(naverAuth.js)이 이미 서버와의 OAuth 흐름을 전부 마치고 token/user를
+// 들고 온 상태이므로, 여기서는 그 토큰을 저장하기만 하면 됩니다 (구글의 loginWithGoogle과
+// 대응되는 자리).
+export function completeNaverLogin({ token, user }) {
+  saveToken(token);
+  return user;
+}
+
 // 저장된 토큰으로 세션을 복원합니다. 토큰이 없거나 만료됐으면 null을 반환합니다.
 export async function restoreSession() {
   const token = getToken();

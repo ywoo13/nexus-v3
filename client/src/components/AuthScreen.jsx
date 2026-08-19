@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { renderGoogleButton } from "../auth/googleAuth.js";
 
-export default function AuthScreen({ onLogin, onGuest }) {
+export default function AuthScreen({ onLogin, onNaverLogin, onGuest }) {
   const buttonRef = useRef(null);
   const [error, setError] = useState(null);
   const [scriptFailed, setScriptFailed] = useState(false);
+  const [naverLoading, setNaverLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,6 +31,22 @@ export default function AuthScreen({ onLogin, onGuest }) {
     };
   }, [onLogin]);
 
+  async function handleNaverClick() {
+    setError(null);
+    setNaverLoading(true);
+    try {
+      await onNaverLogin();
+    } catch (err) {
+      console.error(err);
+      // 사용자가 그냥 팝업을 닫은 경우까지 에러 문구로 겁줄 필요는 없음
+      if (err?.message !== "로그인 창이 닫혔습니다.") {
+        setError(err?.message || "네이버 로그인에 실패했어요. 다시 시도해주세요.");
+      }
+    } finally {
+      setNaverLoading(false);
+    }
+  }
+
   return (
     <div className="customizer-screen">
       <div className="customizer-card">
@@ -43,6 +60,16 @@ export default function AuthScreen({ onLogin, onGuest }) {
             게스트로 계속 이용할 수 있어요.
           </p>
         )}
+
+        <button
+          type="button"
+          className="naver-login-btn"
+          onClick={handleNaverClick}
+          disabled={naverLoading}
+        >
+          <span className="naver-login-mark">N</span>
+          {naverLoading ? "네이버 로그인 중…" : "네이버로 로그인"}
+        </button>
 
         <button type="button" className="skip-link" onClick={onGuest}>
           게스트로 계속하기 →

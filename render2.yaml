@@ -22,6 +22,14 @@ services:
     envVars:
       - key: GOOGLE_CLIENT_ID
         value: 870392911216-3rs60tf7fjqmk53fs3o18qr78lal8c9d.apps.googleusercontent.com
+      - key: NAVER_CLIENT_ID
+        sync: false # 네이버 개발자센터(developers.naver.com/apps)에서 발급받은 값 — 선택 사항, 안 채우면 네이버 로그인 버튼이 에러를 반환합니다
+      - key: NAVER_CLIENT_SECRET
+        sync: false
+      - key: NAVER_REDIRECT_URI
+        sync: false # 예: https://nexus-server.onrender.com/api/auth/naver/callback — 네이버 앱 설정의 Callback URL과 정확히 일치해야 함
+      - key: NODE_ENV
+        value: production
       - key: JWT_SECRET
         generateValue: true # Render가 안전한 랜덤 값을 자동 생성
       - key: DATABASE_URL

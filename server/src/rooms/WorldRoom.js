@@ -2,9 +2,9 @@ import colyseus from "colyseus";
 const { Room } = colyseus;
 import jwt from "jsonwebtoken";
 import { WorldState, Player } from "../schema/State.js";
-import { getUserByGoogleId, getRoomBySlug } from "../db.js";
+import { getUserByProviderId, getRoomBySlug } from "../db.js";
 import { isAdminEmail } from "../admin.js";
-import { isBanned, banTarget } from "../bans.js";
+import { isBanned, banAccount, banTarget } from "../bans.js";
 
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-change-me";
 
@@ -46,16 +46,19 @@ function escapeForBroadcast(v) {
 // 클라이언트가 보낸 "verified"/"isAdmin" 값을 그냥 믿으면 개발자 도구로 누구나 조작할 수 있기 때문에,
 // 반드시 서버가 JWT 서명을 검증하고 DB에서 이메일을 다시 조회해서 화이트리스트와 대조합니다.
 async function resolveIdentity(authToken) {
-  if (!authToken) return { verified: false, isAdmin: false, googleId: null };
+  if (!authToken) return { verified: false, isAdmin: false, provider: null, providerId: null };
   try {
     // 서명에 항상 HS256만 쓰므로, 검증도 그 알고리즘만 받아들이도록 명시해서
     // 알고리즘 혼동 공격류에 대한 방어를 한 겹 더 추가합니다.
     const decoded = jwt.verify(authToken, JWT_SECRET, { algorithms: ["HS256"] });
-    const row = await getUserByGoogleId(decoded.sub);
-    if (!row) return { verified: false, isAdmin: false, googleId: null };
-    return { verified: true, isAdmin: isAdminEmail(row.email), googleId: decoded.sub };
+    // 네이버 로그인을 추가하기 전에 발급된 토큰은 provider 필드가 없었으므로 "google"로 간주합니다.
+    const provider = decoded.provider || "google";
+    const providerId = decoded.sub;
+    const row = await getUserByProviderId(provider, providerId);
+    if (!row) return { verified: false, isAdmin: false, provider: null, providerId: null };
+    return { verified: true, isAdmin: isAdminEmail(row.email), provider, providerId };
   } catch {
-    return { verified: false, isAdmin: false, googleId: null };
+    return { verified: false, isAdmin: false, provider: null, providerId: null };
   }
 }
 
@@ -185,7 +188,7 @@ export class WorldRoom extends Room {
     const ip = extractIp(request);
     const identity = await resolveIdentity(options?.authToken);
 
-    if (await isBanned({ googleId: identity.googleId, ip })) {
+    if (await isBanned({ provider: identity.provider, providerId: identity.providerId, ip })) {
       throw new Error("차단된 계정 또는 네트워크입니다.");
     }
 
@@ -296,10 +299,10 @@ export class WorldRoom extends Room {
       return;
     }
 
-    // ban: 계정(google_id)과 IP 둘 다 알고 있으면 둘 다 차단 목록에 기록 (게스트는 IP만)
+    // ban: 계정(provider+providerId)과 IP 둘 다 알고 있으면 둘 다 차단 목록에 기록 (게스트는 IP만)
     const auth = target.client.auth || {};
     const reason = `admin:${sender.name}`;
-    if (auth.googleId) await banTarget("google_id", auth.googleId, reason);
+    if (auth.provider && auth.providerId) await banAccount(auth.provider, auth.providerId, reason);
     if (auth.ip && auth.ip !== "unknown") await banTarget("ip", auth.ip, reason);
 
     this.forcedLeaveSessions.add(target.client.sessionId);

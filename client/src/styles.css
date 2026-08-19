@@ -368,6 +368,53 @@ input:focus-visible {
   min-height: 44px;
 }
 
+.naver-login-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  margin: 0 0 18px;
+  border: none;
+  border-radius: 6px;
+  background: #03c75a; /* 네이버 브랜드 그린 */
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  font-family: 'Poppins', sans-serif;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.naver-login-btn:hover {
+  opacity: 0.92;
+}
+
+.naver-login-btn:active {
+  transform: scale(0.98);
+}
+
+.naver-login-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.naver-login-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  background: #fff;
+  color: #03c75a;
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 1;
+}
+
 .account-badge {
   display: flex;
   align-items: center;

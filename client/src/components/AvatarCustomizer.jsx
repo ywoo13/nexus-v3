@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { AVATAR_PRESETS } from "./PresetAvatarModel.jsx";
 import AvatarPreviewCanvas from "./AvatarPreviewCanvas.jsx";
 
-export default function AvatarCustomizer({ onNext, initialData, googleUser, onLogout }) {
+export default function AvatarCustomizer({ onNext, initialData, accountUser, onLogout }) {
   const [step, setStep] = useState(initialData?.avatarPreset ? "name" : "avatar");
   const [avatarPreset, setAvatarPreset] = useState(initialData?.avatarPreset || AVATAR_PRESETS[0].id);
   const [name, setName] = useState(initialData?.name || "");
@@ -50,9 +50,9 @@ export default function AvatarCustomizer({ onNext, initialData, googleUser, onLo
         <h1>Nexus</h1>
         <p className="subtitle">닉네임을 정하고 다음 단계로 넘어가세요</p>
 
-        {googleUser && (
+        {accountUser && (
           <div className="account-badge">
-            <span>🔓 {googleUser.name || googleUser.email}님으로 로그인됨</span>
+            <span>🔓 {accountUser.name || accountUser.email || "계정"}님으로 로그인됨</span>
             <button type="button" onClick={onLogout}>
               로그아웃
             </button>
